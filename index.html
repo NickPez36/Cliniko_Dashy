@@ -1,1 +1,671 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cliniko Physiotherapy Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+        // Customizing Tailwind theme with the new color palette
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'brand-white': '#FFFFFF',
+                        'brand-light-pink': '#FCE7F3',
+                        'brand-dark-pink': '#BE185D',
+                        'brand-light-green': '#D1FAE5',
+                        'brand-dark-teal': '#0F766E',
+                        'brand-gray': '#F3F4F6',
+                        'brand-text-dark': '#1F2937',
+                        'brand-text-light': '#6B7280',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #FFFFFF; /* brand-white */
+        }
+        .tab-button {
+            padding: 0.75rem 1.5rem;
+            border: none;
+            background: transparent;
+            color: #6B7280; /* brand-text-light */
+            cursor: pointer;
+            font-weight: 600;
+            transition: color 0.2s ease, border-color 0.2s ease;
+            border-bottom: 2px solid transparent;
+        }
+        .active-tab {
+            color: #0F766E; /* brand-dark-teal */
+            border-bottom-color: #0F766E; /* brand-dark-teal */
+        }
+        .metric-card {
+            cursor: pointer;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            border-radius: 0.75rem;
+        }
+        .metric-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        #chart-modal {
+            transition: opacity 0.3s ease;
+        }
+    </style>
+</head>
+<body class="bg-brand-white text-brand-text-dark">
+
+    <div class="container mx-auto p-4 md:p-8">
+        <header class="mb-8 flex items-center justify-start">
+            <img src="https://raw.githubusercontent.com/NickPez36/Cliniko_Dashy/main/assets/logo.webp" alt="Clinic Logo" class="h-24 w-24 mr-6">
+            <div>
+                <h1 class="text-3xl md:text-4xl font-bold text-brand-text-dark">Spectrum Health Co Dashboards</h1>
+                <p class="text-brand-text-light mt-2">Weekly Performance Metrics</p>
+            </div>
+        </header>
+
+        <!-- Loading State -->
+        <div id="initial-loading" class="text-center p-8">
+            <p class="text-lg text-brand-text-light">Fetching live data from GitHub...</p>
+            <p id="loading-status" class="text-brand-dark-teal mt-2"></p>
+        </div>
+
+        <!-- Main Dashboard Content (hidden initially) -->
+        <div id="main-dashboard" class="hidden">
+            <!-- Filters -->
+            <div class="bg-brand-gray rounded-lg shadow-lg p-4 mb-8 flex flex-col md:flex-row gap-4 items-center justify-center">
+                <div id="practitioner-filter-container" class="w-full md:w-1/3">
+                    <label for="practitioner-select" class="block text-sm font-medium text-brand-text-dark mb-1">Practitioner</label>
+                    <select id="practitioner-select" class="w-full bg-white border-gray-300 text-brand-text-dark rounded-md shadow-sm focus:ring-brand-dark-teal focus:border-brand-dark-teal"></select>
+                </div>
+                <div class="w-full md:w-1/3">
+                    <label for="year-select" class="block text-sm font-medium text-brand-text-dark mb-1">Year</label>
+                    <select id="year-select" class="w-full bg-white border-gray-300 text-brand-text-dark rounded-md shadow-sm focus:ring-brand-dark-teal focus:border-brand-dark-teal"></select>
+                </div>
+                <div class="w-full md:w-1/3">
+                    <label for="week-select" class="block text-sm font-medium text-brand-text-dark mb-1">Week</label>
+                    <select id="week-select" class="w-full bg-white border-gray-300 text-brand-text-dark rounded-md shadow-sm focus:ring-brand-dark-teal focus:border-brand-dark-teal"></select>
+                </div>
+            </div>
+
+            <!-- Tabs -->
+            <div class="flex border-b border-gray-200 mb-8">
+                <button id="practitioner-tab" class="tab-button active-tab">Practitioner Dashboard</button>
+                <button id="clinic-tab" class="tab-button">Clinic Dashboard</button>
+            </div>
+
+            <!-- Practitioner Dashboard Content -->
+            <div id="practitioner-dashboard-content">
+                <!-- Section 1: Practitioner's Weekly Summary -->
+                <div>
+                    <h2 class="text-2xl font-bold text-brand-text-dark mb-4">Practitioner's Weekly Summary</h2>
+                    <div id="practitioner-summary-content" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
+                        <!-- Summary Cards will be injected here -->
+                    </div>
+                </div>
+
+                <!-- Section 2: Patient Journey -->
+                <div class="mt-12">
+                    <h2 class="text-2xl font-bold text-brand-text-dark mb-4">Patient Journey</h2>
+                    <div id="patient-journey-content" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
+                         <!-- Journey Cards will be injected here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Clinic Dashboard Content -->
+            <div id="clinic-dashboard-content" class="hidden">
+                <div id="charts-container" class="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
+                    <div class="bg-brand-gray p-4 rounded-lg shadow-lg">
+                        <h3 class="text-lg font-semibold text-brand-text-dark mb-4">Clinic-Wide Weekly Appointments</h3>
+                        <canvas id="appointmentsChart"></canvas>
+                    </div>
+                    <div class="bg-brand-gray p-4 rounded-lg shadow-lg">
+                        <h3 class="text-lg font-semibold text-brand-text-dark mb-4">Clinic-Wide Patient Mix</h3>
+                        <canvas id="patientMixChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Chart Modal -->
+    <div id="chart-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 hidden z-50">
+        <div class="bg-brand-white rounded-lg shadow-xl w-full max-w-4xl max-h-full flex flex-col">
+            <div class="flex justify-between items-center p-4 border-b border-gray-200">
+                <h2 id="modal-title" class="text-xl font-bold text-brand-text-dark"></h2>
+                <button id="modal-close-button" class="text-brand-text-light hover:text-brand-text-dark text-3xl leading-none">&times;</button>
+            </div>
+            <div class="p-4 flex-grow overflow-y-auto">
+                <canvas id="modal-chart"></canvas>
+            </div>
+        </div>
+    </div>
+
+
+    <script>
+        // --- GLOBAL VARIABLES ---
+        let allEvents = [];
+        let invoicesData = [];
+        let appointmentsChart, patientMixChart, modalChart;
+        let globalPatientFirstAppointment = {};
+
+        // --- UTILITY FUNCTIONS ---
+        function parseClinikoDate(dateString) {
+            if (!dateString || typeof dateString !== 'string') return null;
+            const match = dateString.match(/^(\d{4})-(\d{2})-(\d{2})\s(\d{2}):(\d{2}):(\d{2})/);
+            if (match) {
+                const [_, year, month, day, hour, minute, second] = match.map(Number);
+                return new Date(Date.UTC(year, month - 1, day, hour, minute, second));
+            }
+            return null;
+        }
+        
+        function parseInvoiceDate(dateString) {
+            if (!dateString || typeof dateString !== 'string') return null;
+            const standardizedDateString = dateString.trim().replace(/-/g, '/');
+            let match = standardizedDateString.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+            if (match) {
+                const [_, day, month, year] = match.map(Number);
+                return new Date(Date.UTC(year, month - 1, day));
+            }
+            match = standardizedDateString.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})/);
+            if (match) {
+                const [_, year, month, day] = match.map(Number);
+                return new Date(Date.UTC(year, month - 1, day));
+            }
+            return null;
+        }
+
+        function getWeekNumber(d) {
+            d = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+            d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+            var yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+            var weekNo = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+            return weekNo;
+        }
+
+        function getStartOfWeek(year, week) {
+            const simple = new Date(Date.UTC(year, 0, 1 + (week - 1) * 7));
+            const dayOfWeek = simple.getUTCDay();
+            const isoWeekStart = simple;
+            isoWeekStart.setUTCDate(simple.getUTCDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1));
+            return isoWeekStart;
+        }
+
+        const formatCurrency = (value) => new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(value);
+
+        // --- DATA FETCHING & INITIALIZATION ---
+        document.addEventListener('DOMContentLoaded', () => {
+            const initialLoading = document.getElementById('initial-loading');
+            const loadingStatus = document.getElementById('loading-status');
+            const mainDashboard = document.getElementById('main-dashboard');
+            
+            // Tab handling
+            const practitionerTab = document.getElementById('practitioner-tab');
+            const clinicTab = document.getElementById('clinic-tab');
+            const practitionerContent = document.getElementById('practitioner-dashboard-content');
+            const clinicContent = document.getElementById('clinic-dashboard-content');
+            const practitionerFilterContainer = document.getElementById('practitioner-filter-container');
+
+            practitionerTab.addEventListener('click', () => {
+                practitionerTab.classList.add('active-tab');
+                clinicTab.classList.remove('active-tab');
+                practitionerContent.classList.remove('hidden');
+                clinicContent.classList.add('hidden');
+                practitionerFilterContainer.classList.remove('hidden');
+            });
+
+            clinicTab.addEventListener('click', () => {
+                clinicTab.classList.add('active-tab');
+                practitionerTab.classList.remove('active-tab');
+                clinicContent.classList.remove('hidden');
+                practitionerContent.classList.add('hidden');
+                practitionerFilterContainer.classList.add('hidden');
+            });
+
+
+            const appointmentsUrl = 'https://raw.githubusercontent.com/NickPez36/Cliniko_Dashy/main/data/Appointments.csv';
+            const invoicesUrl = 'https://raw.githubusercontent.com/NickPez36/Cliniko_Dashy/main/data/Invoices.csv';
+
+            loadingStatus.textContent = 'Fetching Appointments.csv...';
+            const fetchAppointments = fetch(appointmentsUrl).then(res => res.ok ? res.text() : Promise.reject(`Appointments.csv: ${res.statusText}`));
+
+            loadingStatus.textContent = 'Fetching Invoices.csv...';
+            const fetchInvoices = fetch(invoicesUrl).then(res => res.ok ? res.text() : Promise.reject(`Invoices.csv: ${res.statusText}`));
+
+            Promise.all([fetchAppointments, fetchInvoices])
+                .then(([appointmentsCSV, invoicesCSV]) => {
+                    loadingStatus.textContent = 'Processing data...';
+                    initializeDashboard(appointmentsCSV, invoicesCSV);
+                    initialLoading.style.display = 'none';
+                    mainDashboard.classList.remove('hidden');
+                })
+                .catch(error => {
+                    console.error("Error fetching data:", error);
+                    initialLoading.innerHTML = `<p class="text-red-400">Failed to load data. Please check the GitHub repository is public and file paths are correct.</p><p class="text-sm text-gray-500 mt-2">${error}</p>`;
+                });
+        });
+        
+        // --- DASHBOARD INITIALIZATION AND LOGIC ---
+        function initializeDashboard(appointmentsCSV, invoicesCSV) {
+            const practitionerSelect = document.getElementById('practitioner-select');
+            const yearSelect = document.getElementById('year-select');
+            const weekSelect = document.getElementById('week-select');
+            
+            const appointmentsResult = Papa.parse(appointmentsCSV, { header: true, skipEmptyLines: true });
+            const invoicesResult = Papa.parse(invoicesCSV, { header: true, skipEmptyLines: true });
+            
+            const appointmentsRaw = appointmentsResult.data;
+            invoicesData = invoicesResult.data;
+
+            allEvents = appointmentsRaw
+                .map(appt => ({
+                    ...appt,
+                    parsedStartTime: parseClinikoDate(appt['Start Time'])
+                }))
+                .filter(appt => appt.parsedStartTime && appt['Practitioner ID']);
+            
+            // Pre-calculate first appointment for all patients globally for efficiency
+            allEvents.filter(e => e['PatientID(s)']).sort((a, b) => a.parsedStartTime - b.parsedStartTime).forEach(e => {
+                const pid = e['PatientID(s)'];
+                if (pid && !globalPatientFirstAppointment[pid]) {
+                    globalPatientFirstAppointment[pid] = e.parsedStartTime;
+                }
+            });
+
+            const practitioners = [...new Set(allEvents.map(a => a.Practitioner))]
+                .map(name => {
+                    const record = allEvents.find(a => a.Practitioner === name);
+                    return { id: record['Practitioner ID'], name };
+                })
+                .filter(p => {
+                    if (!p.name || !p.id || !p.name.includes(' ')) return false;
+                    const name = p.name.trim().toLowerCase();
+                    const invalidKeywords = ['true', 'false', 'n/a', 'katalyst', 'cliniko', 'spectrum', 'headaches', 'exercise physiology'];
+                    if (name.length <= 4 || !isNaN(name)) return false;
+                    return !invalidKeywords.some(keyword => name.includes(keyword));
+                });
+                
+            practitioners.forEach(p => practitionerSelect.add(new Option(p.name, p.id)));
+
+            function populateYears() {
+                yearSelect.innerHTML = '';
+                const selectedPractitionerId = practitionerSelect.value;
+                const practitionerEvents = allEvents.filter(e => e['Practitioner ID'] === selectedPractitionerId);
+                const years = [...new Set(practitionerEvents.map(e => e.parsedStartTime.getUTCFullYear()))].sort((a,b) => b-a);
+                years.forEach(year => yearSelect.add(new Option(year, year)));
+                populateWeeks();
+            }
+
+            function populateWeeks() {
+                weekSelect.innerHTML = '';
+                const selectedPractitionerId = practitionerSelect.value;
+                const selectedYear = parseInt(yearSelect.value);
+                const practitionerEventsInYear = allEvents.filter(e => 
+                    e['Practitioner ID'] === selectedPractitionerId && 
+                    e.parsedStartTime.getUTCFullYear() === selectedYear
+                );
+                const weeks = [...new Set(practitionerEventsInYear.map(e => getWeekNumber(e.parsedStartTime)))].sort((a,b) => a-b);
+                weeks.forEach(week => {
+                    const weekStartDate = getStartOfWeek(selectedYear, week);
+                    const weekStartDateFormatted = `${weekStartDate.getUTCDate().toString().padStart(2, '0')}/${(weekStartDate.getUTCMonth() + 1).toString().padStart(2, '0')}/${weekStartDate.getUTCFullYear()}`;
+                    weekSelect.add(new Option(`Week ${week} (${weekStartDateFormatted})`, week));
+                });
+                updateDashboard();
+            }
+
+            practitionerSelect.addEventListener('change', populateYears);
+            yearSelect.addEventListener('change', populateWeeks);
+            weekSelect.addEventListener('change', updateDashboard);
+            
+            // Modal event listeners
+            const modal = document.getElementById('chart-modal');
+            const modalCloseButton = document.getElementById('modal-close-button');
+            modalCloseButton.addEventListener('click', () => modal.classList.add('hidden'));
+            modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.add('hidden'); });
+
+            document.getElementById('practitioner-dashboard-content').addEventListener('click', (e) => {
+                const card = e.target.closest('.metric-card');
+                if (card) {
+                    const metricType = card.dataset.metric;
+                    const metricTitle = card.querySelector('h3').textContent;
+                    showYearlyTrendChart(metricType, metricTitle);
+                }
+            });
+
+            populateYears();
+        }
+
+        // --- MAIN UPDATE FUNCTION ---
+        function updateDashboard() {
+            const practitionerSummaryContent = document.getElementById('practitioner-summary-content');
+            const patientJourneyContent = document.getElementById('patient-journey-content');
+            
+            const selectedPractitionerId = document.getElementById('practitioner-select').value;
+            const selectedPractitionerName = document.getElementById('practitioner-select').options[document.getElementById('practitioner-select').selectedIndex].text;
+            const selectedYear = parseInt(document.getElementById('year-select').value);
+            const selectedWeek = parseInt(document.getElementById('week-select').value);
+
+            if (!selectedYear || !selectedWeek) {
+                practitionerSummaryContent.innerHTML = `<p class="col-span-full text-center text-gray-400">Please select a year and week.</p>`;
+                patientJourneyContent.innerHTML = '';
+                return;
+            }
+            
+            const weekStartDate = getStartOfWeek(selectedYear, selectedWeek);
+            const weekEndDate = new Date(weekStartDate);
+            weekEndDate.setUTCDate(weekStartDate.getUTCDate() + 7);
+
+            // Practitioner specific calculations
+            if(selectedPractitionerId) {
+                const practitionerEventsThisWeek = allEvents.filter(evt => {
+                    return evt['Practitioner ID'] === selectedPractitionerId &&
+                    evt.parsedStartTime >= weekStartDate &&
+                    evt.parsedStartTime < weekEndDate;
+                });
+                    
+                const practitionerAppointmentsThisWeek = practitionerEventsThisWeek.filter(a => {
+                    const maxPatients = parseInt(a['Maximum Number of Patients'], 10);
+                    return !isNaN(maxPatients) && maxPatients > 0;
+                });
+                
+                const practitionerInvoicesThisWeek = invoicesData.filter(inv => {
+                    if (!inv['Issue Date'] || !inv.Practitioner) return false;
+                    const invDate = parseInvoiceDate(inv['Issue Date']); 
+                    return invDate && inv.Practitioner.trim() === selectedPractitionerName.trim() &&
+                           invDate >= weekStartDate &&
+                           invDate < weekEndDate;
+                });
+                
+                const totalAppointments = practitionerAppointmentsThisWeek.length;
+                const weeklyBilledRevenue = practitionerInvoicesThisWeek.reduce((sum, inv) => sum + parseFloat(inv['Invoice Amount'] || 0), 0);
+                
+                const cancelledAppointments = practitionerAppointmentsThisWeek.filter(a => a['Cancellation Time'] && a['Cancellation Time'].trim() !== '' && a['Cancellation Time'].toLowerCase() !== 'n/a').length;
+                const cancellationRate = totalAppointments > 0 ? (cancelledAppointments / totalAppointments) * 100 : 0;
+                
+                const didNotAttendCount = practitionerAppointmentsThisWeek.filter(a => a['Did Not Arrive'] === 'TRUE').length;
+                const didNotAttendRate = totalAppointments > 0 ? (didNotAttendCount / totalAppointments) * 100 : 0;
+                
+                const uniquePatientsThisWeek = [...new Set(practitionerAppointmentsThisWeek.map(a => a['PatientID(s)']).filter(id => id))];
+                
+                const newPatientIdsThisWeek = uniquePatientsThisWeek.filter(patientId => {
+                     const firstApptDate = globalPatientFirstAppointment[patientId];
+                     return firstApptDate && firstApptDate >= weekStartDate && firstApptDate < weekEndDate;
+                });
+                const newPatientCount = newPatientIdsThisWeek.length;
+                const newPatientPercent = uniquePatientsThisWeek.length > 0 ? (newPatientCount / uniquePatientsThisWeek.length) * 100 : 0;
+
+                const pvaCliniko = newPatientCount > 0 ? totalAppointments / newPatientCount : 0;
+                
+                // IAR % Calculation
+                const newPatientsRebooked = newPatientIdsThisWeek.filter(patientId => allEvents.some(appt => appt['PatientID(s)'] === patientId && appt.parsedStartTime >= weekEndDate)).length;
+                const iarRate = newPatientCount > 0 ? (newPatientsRebooked / newPatientCount) * 100 : 0;
+                
+                // PVA (3 Month) Calculation
+                const threeMonthsAgo = new Date(weekStartDate);
+                threeMonthsAgo.setUTCMonth(threeMonthsAgo.getUTCMonth() - 3);
+
+                const newPatientCohort = Object.keys(globalPatientFirstAppointment).filter(patientId => {
+                    const firstAppt = globalPatientFirstAppointment[patientId];
+                    const firstApptPractitioner = allEvents.find(e => e['PatientID(s)'] === patientId && e.parsedStartTime.getTime() === firstAppt.getTime());
+                    return firstApptPractitioner && firstApptPractitioner['Practitioner ID'] === selectedPractitionerId &&
+                           firstAppt >= threeMonthsAgo && firstAppt < weekStartDate;
+                });
+
+                let totalFollowUps = 0;
+                newPatientCohort.forEach(patientId => {
+                    const firstApptDate = globalPatientFirstAppointment[patientId];
+                    const threeMonthsAfterFirstAppt = new Date(firstApptDate);
+                    threeMonthsAfterFirstAppt.setUTCMonth(threeMonthsAfterFirstAppt.getUTCMonth() + 3);
+
+                    totalFollowUps += allEvents.filter(appt => 
+                        appt['PatientID(s)'] === patientId &&
+                        appt.parsedStartTime > firstApptDate &&
+                        appt.parsedStartTime <= threeMonthsAfterFirstAppt
+                    ).length;
+                });
+                const pva3Month = newPatientCohort.length > 0 ? (totalFollowUps + newPatientCohort.length) / newPatientCohort.length : 0;
+
+                // Correct Rebooking % Calculation
+                const allPatientsRebooked = uniquePatientsThisWeek.filter(patientId => allEvents.some(appt => appt['PatientID(s)'] === patientId && appt.parsedStartTime >= weekEndDate)).length;
+                const rebookingRate = uniquePatientsThisWeek.length > 0 ? (allPatientsRebooked / uniquePatientsThisWeek.length) * 100 : 0;
+                
+                const avgRevenuePerAppointment = totalAppointments > 0 ? weeklyBilledRevenue / totalAppointments : 0;
+                
+                practitionerSummaryContent.innerHTML = '';
+                patientJourneyContent.innerHTML = '';
+                
+                const summaryMetrics = [
+                    { key: 'totalAppointments', title: 'Total Appointments', value: totalAppointments, subtitle: 'All available slots' },
+                    { key: 'weeklyBilledRevenue', title: 'Weekly Billed Revenue', value: formatCurrency(weeklyBilledRevenue), subtitle: 'Total value of invoices' },
+                    { key: 'cancellationRate', title: 'Cancellation Rate', value: `${cancellationRate.toFixed(1)}%`, subtitle: `${cancelledAppointments} of ${totalAppointments} appointments` },
+                    { key: 'didNotAttendRate', title: 'Did Not Attend %', value: `${didNotAttendRate.toFixed(1)}%`, subtitle: `${didNotAttendCount} of ${totalAppointments} appointments` },
+                    { key: 'newPatientPercent', title: '% of New Patients', value: `${newPatientPercent.toFixed(1)}%`, subtitle: `Of ${uniquePatientsThisWeek.length} unique patients` },
+                    { key: 'rebookingRate', title: 'Rebooking %', value: `${rebookingRate.toFixed(1)}%`, subtitle: 'Patients with future appts' },
+                    { key: 'avgRevenuePerAppointment', title: 'Avg. Revenue / Appt', value: formatCurrency(avgRevenuePerAppointment), subtitle: 'Based on total appts' },
+                ];
+                
+                const journeyMetrics = [
+                     { key: 'newPatients', title: 'New Patients', value: newPatientCount, subtitle: 'First visit this week' },
+                     { key: 'iarRate', title: 'IAR %', value: `${iarRate.toFixed(1)}%`, subtitle: 'New patients with future appt' },
+                     { key: 'pvaCliniko', title: 'PVA (Cliniko)', value: pvaCliniko.toFixed(1), subtitle: 'Appts / New Patients' },
+                     { key: 'pva3Month', title: 'PVA (3 Month)', value: pva3Month.toFixed(1), subtitle: 'Rolling 3 month avg visits' },
+                ];
+
+                const createCardHTML = (metric, type) => {
+                    const bgColor = type === 'summary' ? 'bg-brand-light-green' : 'bg-brand-light-pink';
+                    const titleColor = type === 'summary' ? 'text-brand-dark-pink' : 'text-brand-dark-teal';
+                    const valueColor = type === 'summary' ? 'text-brand-dark-pink' : 'text-brand-dark-teal';
+                    const subtitleColor = type === 'summary' ? 'text-pink-900 opacity-70' : 'text-teal-900 opacity-70';
+
+                    return `
+                    <div class="${bgColor} p-4 rounded-lg shadow-lg flex flex-col justify-between metric-card" data-metric="${metric.key}">
+                        <div>
+                            <h3 class="text-sm font-medium ${titleColor} font-semibold">${metric.title}</h3>
+                            <p class="text-3xl font-bold ${valueColor} mt-1">${metric.value}</p>
+                        </div>
+                        <p class="text-xs ${subtitleColor} mt-2">${metric.subtitle}</p>
+                    </div>`;
+                };
+
+                summaryMetrics.forEach(metric => practitionerSummaryContent.innerHTML += createCardHTML(metric, 'summary'));
+                journeyMetrics.forEach(metric => patientJourneyContent.innerHTML += createCardHTML(metric, 'journey'));
+            }
+
+            // Clinic-wide calculations (always run)
+            const clinicEventsThisWeek = allEvents.filter(evt => evt.parsedStartTime >= weekStartDate && evt.parsedStartTime < weekEndDate);
+            const clinicAppointmentsThisWeek = clinicEventsThisWeek.filter(a => parseInt(a['Maximum Number of Patients'], 10) > 0);
+
+            const clinicCompletedAppointments = clinicAppointmentsThisWeek.filter(a => a['Patient Arrived'] === 'TRUE').length;
+            const clinicCancelledAppointments = clinicAppointmentsThisWeek.filter(a => a['Cancellation Time'] && a['Cancellation Time'].trim() !== '' && a['Cancellation Time'].toLowerCase() !== 'n/a').length;
+            const clinicDidNotAttendCount = clinicAppointmentsThisWeek.filter(a => a['Did Not Arrive'] === 'TRUE').length;
+            const clinicUniquePatientsThisWeek = [...new Set(clinicAppointmentsThisWeek.map(a => a['PatientID(s)']).filter(id => id))];
+            
+            const clinicNewPatientsThisWeek = clinicUniquePatientsThisWeek.filter(patientId => {
+                 const firstApptDate = globalPatientFirstAppointment[patientId];
+                 return firstApptDate && firstApptDate >= weekStartDate && firstApptDate < weekEndDate;
+            });
+            const clinicNewPatientCount = clinicNewPatientsThisWeek.length;
+            const clinicReturningPatientCount = clinicUniquePatientsThisWeek.length - clinicNewPatientCount;
+
+            if(appointmentsChart) appointmentsChart.destroy();
+            const appointmentsCtx = document.getElementById('appointmentsChart').getContext('2d');
+            appointmentsChart = new Chart(appointmentsCtx, {
+                type: 'bar',
+                data: {
+                    labels: ['Completed', 'Cancelled', 'No-Show'],
+                    datasets: [{ label: 'Count', data: [clinicCompletedAppointments, clinicCancelledAppointments, clinicDidNotAttendCount], backgroundColor: ['#D1FAE5', '#FCE7F3', '#FECACA'] }]
+                },
+                options: { scales: { y: { beginAtZero: true, grid: { color: '#E5E7EB' }, ticks: { color: '#374151' } }, x: { grid: { display: false }, ticks: { color: '#374151' } } }, plugins: { legend: { display: false } } }
+            });
+
+            if(patientMixChart) patientMixChart.destroy();
+            const patientMixCtx = document.getElementById('patientMixChart').getContext('2d');
+            patientMixChart = new Chart(patientMixCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['New Patients', 'Returning Patients'],
+                    datasets: [{ data: [clinicNewPatientCount, clinicReturningPatientCount], backgroundColor: ['#BE185D', '#0F766E'], hoverOffset: 4 }]
+                },
+                options: { plugins: { legend: { position: 'bottom', labels: { color: '#374151' } } } }
+            });
+        }
+        
+        // --- YEARLY TREND MODAL ---
+        function calculateYearlyMetrics(practitionerId, practitionerName, year) {
+            const weeksInYear = 53;
+            const yearlyMetrics = {};
+            const metricKeys = ['totalAppointments', 'weeklyBilledRevenue', 'cancellationRate', 'didNotAttendRate', 'newPatients', 'newPatientPercent', 'rebookingRate', 'avgRevenuePerAppointment', 'pvaCliniko', 'iarRate', 'pva3Month'];
+            metricKeys.forEach(key => yearlyMetrics[key] = Array(weeksInYear).fill(0));
+
+            const practitionerEventsThisYear = allEvents.filter(e => 
+                e['Practitioner ID'] === practitionerId && 
+                e.parsedStartTime.getUTCFullYear() === year
+            );
+             const practitionerInvoicesThisYear = invoicesData.filter(inv => {
+                if (!inv['Issue Date'] || !inv.Practitioner) return false;
+                const invDate = parseInvoiceDate(inv['Issue Date']); 
+                return invDate && inv.Practitioner.trim() === practitionerName.trim() && invDate.getUTCFullYear() === year;
+            });
+
+            for (let week = 1; week <= weeksInYear; week++) {
+                const weekIndex = week - 1;
+                const weekStartDate = getStartOfWeek(year, week);
+                const weekEndDate = new Date(weekStartDate);
+                weekEndDate.setUTCDate(weekStartDate.getUTCDate() + 7);
+
+                const eventsThisWeek = practitionerEventsThisYear.filter(e => e.parsedStartTime >= weekStartDate && e.parsedStartTime < weekEndDate);
+                const apptsThisWeek = eventsThisWeek.filter(a => parseInt(a['Maximum Number of Patients'], 10) > 0);
+                const invoicesThisWeek = practitionerInvoicesThisYear.filter(i => {
+                    const invDate = parseInvoiceDate(i['Issue Date']);
+                    return invDate >= weekStartDate && invDate < weekEndDate;
+                });
+
+                const totalAppointments = apptsThisWeek.length;
+                if (totalAppointments === 0) continue;
+                
+                const billedRevenue = invoicesThisWeek.reduce((sum, inv) => sum + parseFloat(inv['Invoice Amount'] || 0), 0);
+                const cancelled = apptsThisWeek.filter(a => a['Cancellation Time'] && a['Cancellation Time'].trim() !== '' && a['Cancellation Time'].toLowerCase() !== 'n/a').length;
+                const didNotAttend = apptsThisWeek.filter(a => a['Did Not Arrive'] === 'TRUE').length;
+                const uniquePatients = [...new Set(apptsThisWeek.map(a => a['PatientID(s)']).filter(id => id))];
+                const newPatientIds = uniquePatients.filter(id => {
+                    const firstDate = globalPatientFirstAppointment[id];
+                    return firstDate && firstDate >= weekStartDate && firstDate < weekEndDate;
+                });
+                const newPatientsCount = newPatientIds.length;
+                
+                const newPatientsRebooked = newPatientIds.filter(id => allEvents.some(a => a['PatientID(s)'] === id && a.parsedStartTime >= weekEndDate)).length;
+
+                const allPatientsRebooked = uniquePatients.filter(id => allEvents.some(a => a['PatientID(s)'] === id && a.parsedStartTime >= weekEndDate)).length;
+                
+                // PVA 3 Month for Chart
+                const threeMonthsAgo = new Date(weekStartDate);
+                threeMonthsAgo.setUTCMonth(threeMonthsAgo.getUTCMonth() - 3);
+                const cohort = Object.keys(globalPatientFirstAppointment).filter(id => {
+                    const firstAppt = globalPatientFirstAppointment[id];
+                    const firstPrac = allEvents.find(e => e['PatientID(s)'] === id && e.parsedStartTime.getTime() === firstAppt.getTime());
+                    return firstPrac && firstPrac['Practitioner ID'] === practitionerId && firstAppt >= threeMonthsAgo && firstAppt < weekStartDate;
+                });
+                let followUps = 0;
+                cohort.forEach(id => {
+                    const firstApptDate = globalPatientFirstAppointment[id];
+                    const threeMonthsAfter = new Date(firstApptDate);
+                    threeMonthsAfter.setUTCMonth(threeMonthsAfter.getUTCMonth() + 3);
+                    followUps += allEvents.filter(a => a['PatientID(s)'] === id && a.parsedStartTime > firstApptDate && a.parsedStartTime <= threeMonthsAfter).length;
+                });
+
+                yearlyMetrics.totalAppointments[weekIndex] = totalAppointments;
+                yearlyMetrics.weeklyBilledRevenue[weekIndex] = billedRevenue;
+                yearlyMetrics.cancellationRate[weekIndex] = (cancelled / totalAppointments) * 100;
+                yearlyMetrics.didNotAttendRate[weekIndex] = (didNotAttend / totalAppointments) * 100;
+                yearlyMetrics.newPatients[weekIndex] = newPatientsCount;
+                yearlyMetrics.newPatientPercent[weekIndex] = uniquePatients.length > 0 ? (newPatientsCount / uniquePatients.length) * 100 : 0;
+                yearlyMetrics.rebookingRate[weekIndex] = uniquePatients.length > 0 ? (allPatientsRebooked / uniquePatients.length) * 100 : 0;
+                yearlyMetrics.avgRevenuePerAppointment[weekIndex] = totalAppointments > 0 ? billedRevenue / totalAppointments : 0;
+                yearlyMetrics.pvaCliniko[weekIndex] = newPatientsCount > 0 ? totalAppointments / newPatientsCount : 0;
+                yearlyMetrics.iarRate[weekIndex] = newPatientsCount > 0 ? (newPatientsRebooked / newPatientsCount) * 100 : 0;
+                yearlyMetrics.pva3Month[weekIndex] = cohort.length > 0 ? (followUps + cohort.length) / cohort.length : 0;
+
+            }
+            return yearlyMetrics;
+        }
+
+        function showYearlyTrendChart(metricType, metricTitle) {
+            const modal = document.getElementById('chart-modal');
+            const modalTitle = document.getElementById('modal-title');
+            const selectedPractitionerId = document.getElementById('practitioner-select').value;
+            const selectedPractitionerName = document.getElementById('practitioner-select').options[document.getElementById('practitioner-select').selectedIndex].text;
+            const selectedYear = parseInt(document.getElementById('year-select').value);
+
+            if (!selectedPractitionerId || !selectedYear) return;
+
+            modalTitle.textContent = `${metricTitle} Trend for ${selectedYear}`;
+
+            const yearlyMetrics = calculateYearlyMetrics(selectedPractitionerId, selectedPractitionerName, selectedYear);
+            const chartData = yearlyMetrics[metricType];
+            
+            if (!chartData) {
+                console.error(`No chart data found for metric: ${metricType}`);
+                return; // Exit if data is not available
+            }
+
+            const weeksInYear = 53;
+            const labels = Array.from({ length: weeksInYear }, (_, i) => `W${i + 1}`);
+
+            const isCurrency = metricType === 'weeklyBilledRevenue' || metricType === 'avgRevenuePerAppointment';
+            const isPercent = metricType.toLowerCase().includes('rate') || metricType.toLowerCase().includes('percent');
+
+            if (modalChart) modalChart.destroy();
+            const modalCtx = document.getElementById('modal-chart').getContext('2d');
+            modalChart = new Chart(modalCtx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: metricTitle,
+                        data: chartData,
+                        borderColor: '#BE185D', // brand-dark-pink
+                        backgroundColor: 'rgba(190, 24, 93, 0.2)',
+                        fill: true,
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            grid: { color: '#E5E7EB' },
+                            ticks: { 
+                                color: '#374151',
+                                callback: function(value) {
+                                    if (isCurrency) return formatCurrency(value);
+                                    if (isPercent) return `${value.toFixed(1)}%`;
+                                    return value;
+                                }
+                            }
+                        },
+                        x: {
+                            grid: { display: false },
+                            ticks: { color: '#374151' }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: false }
+                    }
+                }
+            });
+
+            modal.classList.remove('hidden');
+        }
+    </script>
+</body>
+</html>
 
