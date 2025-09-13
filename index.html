@@ -167,15 +167,55 @@
         let appointmentsChart, patientMixChart, modalChart;
         let globalPatientFirstAppointment = {};
 
-        const PRACTITIONER_HOURS = {
-            'Isabella Coluccio': 33,
-            'Kate Deaves': 27,
-            'Andrew Lovell': 32,
-            'Caitlin Wright': 32,
-            'Arron Huynh': 14
+        const PRACTITIONER_HOURS_HISTORY = {
+            'Isabella Coluccio': [
+                { startDate: '2000-01-01', endDate: '9999-12-31', hours: 33 }
+            ],
+            'Kate Deaves': [
+                { startDate: '2000-01-01', endDate: '9999-12-31', hours: 27 }
+            ],
+            'Andrew Lovell': [
+                { startDate: '2000-01-01', endDate: '9999-12-31', hours: 32 }
+            ],
+            'Caitlin Wright': [
+                { startDate: '2000-01-01', endDate: '9999-12-31', hours: 32 }
+            ],
+            'Arron Huynh': [
+                { startDate: '2000-01-01', endDate: '9999-12-31', hours: 14 }
+            ]
+        };
+
+        const METRIC_BENCHMARKS = {
+            utilizationRate: 80,
+            cancellationRate: 15,
+            didNotAttendRate: 5,
+            rebookingRate: 80,
+            treatmentNoteCompletionRate: 90,
+            iarRate: 95,
+            pvaCliniko: 8,
+            pva3Month: 8,
+            totalClasses: 5,
+            totalGroupAttendance: 30,
+            classCancellationRate: 15
         };
 
         // --- UTILITY FUNCTIONS ---
+        function getPractitionerHoursForDate(practitionerName, date) {
+            const history = PRACTITIONER_HOURS_HISTORY[practitionerName];
+            if (!history) return 0;
+
+            const checkDate = new Date(date);
+
+            for (const period of history) {
+                const startDate = new Date(period.startDate);
+                const endDate = new Date(period.endDate);
+                if (checkDate >= startDate && checkDate <= endDate) {
+                    return period.hours;
+                }
+            }
+            return 0; // Default if no period matches
+        }
+
         function parseClinikoDate(dateString) {
             if (!dateString || typeof dateString !== 'string') return null;
             const match = dateString.match(/^(\d{4})-(\d{2})-(\d{2})\s(\d{2}):(\d{2}):(\d{2})/);
@@ -409,7 +449,7 @@
                 
                 const totalBookedAppointments = practitionerAppointmentsThisWeek.length;
                 
-                const practitionerFixedHours = PRACTITIONER_HOURS[selectedPractitionerName] || 0;
+                const practitionerFixedHours = getPractitionerHoursForDate(selectedPractitionerName, weekStartDate);
                 const practitionerFixedMinutes = practitionerFixedHours * 60;
                 
                 const attendedAppointmentsTime = practitionerAppointmentsThisWeek.filter(a => parseInt(a['Number of Patients'], 10) > 0);
@@ -536,7 +576,9 @@
                     const totalClasses = groupClassesThisWeek.length;
                     const totalAttendance = groupClassesThisWeek.reduce((sum, cls) => sum + parseInt(cls['Number of Patients'] || 0), 0);
                     const totalCancellations = groupClassesThisWeek.reduce((sum, cls) => sum + parseInt(cls['Number of Cancellations'] || 0), 0);
-                    
+                    const totalPotentialAttendance = totalAttendance + totalCancellations;
+                    const classCancellationRate = totalPotentialAttendance > 0 ? (totalCancellations / totalPotentialAttendance) * 100 : 0;
+
                     const groupRevenue = practitionerInvoicesThisWeek
                         .filter(inv => parseFloat(inv['Invoice Amount']) === 27.50)
                         .reduce((sum, inv) => sum + parseFloat(inv['Invoice Amount'] || 0), 0);
@@ -547,6 +589,7 @@
                         { key: 'totalClasses', title: 'Total Classes Held', value: totalClasses, subtitle: 'This week' },
                         { key: 'totalGroupAttendance', title: 'Total Class Attendance', value: totalAttendance, subtitle: 'Number of participants' },
                         { key: 'totalGroupCancellations', title: 'Class Cancellations', value: totalCancellations, subtitle: 'Recorded cancellations' },
+                        { key: 'classCancellationRate', title: 'Class Cancellation %', value: `${classCancellationRate.toFixed(1)}%`, subtitle: `${totalCancellations} of ${totalPotentialAttendance} bookings` },
                         { key: 'totalGroupRevenue', title: 'Total Group Revenue', value: formatCurrency(groupRevenue), subtitle: 'From all classes' },
                         { key: 'groupRevenuePercent', title: '% of Prac Revenue', value: `${groupRevenuePercent.toFixed(1)}%`, subtitle: 'Group contribution to total' },
                     ];
@@ -602,7 +645,7 @@
         function calculateYearlyMetrics(practitionerId, practitionerName, year) {
             const weeksInYear = 53;
             const yearlyMetrics = {};
-            const metricKeys = ['totalBookedAppointments', 'totalCompletedAppointments', 'weeklyBilledRevenue', 'cancellationRate', 'didNotAttendRate', 'newPatients', 'newPatientPercent', 'rebookingRate', 'avgRevenuePerAppointment', 'pvaCliniko', 'iarRate', 'pva3Month', 'treatmentNoteCompletionRate', 'utilizationRate', 'totalClasses', 'totalGroupAttendance', 'totalGroupCancellations', 'totalGroupRevenue', 'groupRevenuePercent'];
+            const metricKeys = ['totalBookedAppointments', 'totalCompletedAppointments', 'weeklyBilledRevenue', 'cancellationRate', 'didNotAttendRate', 'newPatients', 'newPatientPercent', 'rebookingRate', 'avgRevenuePerAppointment', 'pvaCliniko', 'iarRate', 'pva3Month', 'treatmentNoteCompletionRate', 'utilizationRate', 'totalClasses', 'totalGroupAttendance', 'totalGroupCancellations', 'totalGroupRevenue', 'groupRevenuePercent', 'classCancellationRate'];
             metricKeys.forEach(key => yearlyMetrics[key] = Array(weeksInYear).fill(0));
 
             const practitionerEventsThisYear = allEvents.filter(e => 
@@ -614,15 +657,15 @@
                 const invDate = parseInvoiceDate(inv['Issue Date']); 
                 return invDate && inv.Practitioner.trim() === practitionerName.trim() && invDate.getUTCFullYear() === year;
             });
-            
-            const practitionerFixedHours = PRACTITIONER_HOURS[practitionerName] || 0;
-            const practitionerFixedMinutes = practitionerFixedHours * 60;
 
             for (let week = 1; week <= weeksInYear; week++) {
                 const weekIndex = week - 1;
                 const weekStartDate = getStartOfWeek(year, week);
                 const weekEndDate = new Date(weekStartDate);
                 weekEndDate.setUTCDate(weekStartDate.getUTCDate() + 7);
+
+                const practitionerFixedHours = getPractitionerHoursForDate(practitionerName, weekStartDate);
+                const practitionerFixedMinutes = practitionerFixedHours * 60;
 
                 const eventsThisWeek = practitionerEventsThisYear.filter(e => e.parsedStartTime >= weekStartDate && e.parsedStartTime < weekEndDate);
                 const apptsThisWeek = eventsThisWeek.filter(a => parseInt(a['Maximum Number of Patients'], 10) > 0);
@@ -673,7 +716,10 @@
                 const groupRevenue = invoicesThisWeek
                     .filter(inv => parseFloat(inv['Invoice Amount']) === 27.50)
                     .reduce((sum, inv) => sum + parseFloat(inv['Invoice Amount'] || 0), 0);
-                
+                const groupCancellations = groupClasses.reduce((sum, cls) => sum + parseInt(cls['Number of Cancellations'] || 0), 0);
+                const groupAttendance = groupClasses.reduce((sum, cls) => sum + parseInt(cls['Number of Patients'] || 0), 0);
+                const groupTotalPotential = groupAttendance + groupCancellations;
+
                 yearlyMetrics.totalBookedAppointments[weekIndex] = totalBooked;
                 yearlyMetrics.totalCompletedAppointments[weekIndex] = totalCompleted;
                 yearlyMetrics.utilizationRate[weekIndex] = practitionerFixedMinutes > 0 ? (attendedMinutes / practitionerFixedMinutes) * 100 : 0;
@@ -689,10 +735,11 @@
                 yearlyMetrics.iarRate[weekIndex] = newPatientsCount > 0 ? (newPatientsRebooked / newPatientsCount) * 100 : 0;
                 yearlyMetrics.pva3Month[weekIndex] = cohort.length > 0 ? (followUps + cohort.length) / cohort.length : 0;
                 yearlyMetrics.totalClasses[weekIndex] = groupClasses.length;
-                yearlyMetrics.totalGroupAttendance[weekIndex] = groupClasses.reduce((sum, cls) => sum + parseInt(cls['Number of Patients'] || 0), 0);
-                yearlyMetrics.totalGroupCancellations[weekIndex] = groupClasses.reduce((sum, cls) => sum + parseInt(cls['Number of Cancellations'] || 0), 0);
+                yearlyMetrics.totalGroupAttendance[weekIndex] = groupAttendance;
+                yearlyMetrics.totalGroupCancellations[weekIndex] = groupCancellations;
                 yearlyMetrics.totalGroupRevenue[weekIndex] = groupRevenue;
                 yearlyMetrics.groupRevenuePercent[weekIndex] = billedRevenue > 0 ? (groupRevenue / billedRevenue) * 100 : 0;
+                yearlyMetrics.classCancellationRate[weekIndex] = groupTotalPotential > 0 ? (groupCancellations / groupTotalPotential) * 100 : 0;
 
             }
             return yearlyMetrics;
@@ -723,20 +770,37 @@
             const isCurrency = metricType.toLowerCase().includes('revenue');
             const isPercent = metricType.toLowerCase().includes('rate') || metricType.toLowerCase().includes('percent') || metricType.toLowerCase().includes('completion');
 
+            const datasets = [{
+                label: metricTitle,
+                data: chartData,
+                borderColor: '#BE185D', // brand-dark-pink
+                backgroundColor: 'rgba(190, 24, 93, 0.2)',
+                fill: true,
+                tension: 0.4
+            }];
+            
+            const benchmarkValue = METRIC_BENCHMARKS[metricType];
+            if(benchmarkValue !== undefined) {
+                datasets.push({
+                    label: 'Benchmark',
+                    data: Array(weeksInYear).fill(benchmarkValue),
+                    borderColor: '#0F766E', // brand-dark-teal
+                    borderWidth: 2,
+                    borderDash: [5, 5],
+                    pointRadius: 0,
+                    fill: false,
+                    tension: 0
+                });
+            }
+
+
             if (modalChart) modalChart.destroy();
             const modalCtx = document.getElementById('modal-chart').getContext('2d');
             modalChart = new Chart(modalCtx, {
                 type: 'line',
                 data: {
                     labels: labels,
-                    datasets: [{
-                        label: metricTitle,
-                        data: chartData,
-                        borderColor: '#BE185D', // brand-dark-pink
-                        backgroundColor: 'rgba(190, 24, 93, 0.2)',
-                        fill: true,
-                        tension: 0.4
-                    }]
+                    datasets: datasets
                 },
                 options: {
                     scales: {
@@ -758,7 +822,13 @@
                         }
                     },
                     plugins: {
-                        legend: { display: false }
+                        legend: { 
+                            display: true,
+                            position: 'top',
+                            labels: {
+                                color: '#374151'
+                            }
+                        }
                     }
                 }
             });
