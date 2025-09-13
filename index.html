@@ -22,6 +22,8 @@
                         'brand-gray': '#F3F4F6',
                         'brand-text-dark': '#1F2937',
                         'brand-text-light': '#6B7280',
+                        'brand-light-blue': '#E0F2FE',
+                        'brand-dark-blue': '#1E40AF',
                     }
                 }
             }
@@ -118,6 +120,14 @@
                          <!-- Journey Cards will be injected here -->
                     </div>
                 </div>
+                
+                <!-- Section 3: Group Exercise Class Summary -->
+                <div id="group-class-section" class="mt-12 hidden">
+                    <h2 class="text-2xl font-bold text-brand-text-dark mb-4">Group Exercise Class Summary</h2>
+                    <div id="group-class-content" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
+                         <!-- Group Class Cards will be injected here -->
+                    </div>
+                </div>
             </div>
 
             <!-- Clinic Dashboard Content -->
@@ -151,11 +161,19 @@
 
 
     <script>
-        // --- GLOBAL VARIABLES ---
+        // --- GLOBAL VARIABLES & CONFIG ---
         let allEvents = [];
         let invoicesData = [];
         let appointmentsChart, patientMixChart, modalChart;
         let globalPatientFirstAppointment = {};
+
+        const PRACTITIONER_HOURS = {
+            'Isabella Coluccio': 33,
+            'Kate Deaves': 27,
+            'Andrew Lovell': 32,
+            'Caitlin Wright': 32,
+            'Arron Huynh': 14
+        };
 
         // --- UTILITY FUNCTIONS ---
         function parseClinikoDate(dateString) {
@@ -269,9 +287,10 @@
             allEvents = appointmentsRaw
                 .map(appt => ({
                     ...appt,
-                    parsedStartTime: parseClinikoDate(appt['Start Time'])
+                    parsedStartTime: parseClinikoDate(appt['Start Time']),
+                    parsedEndTime: parseClinikoDate(appt['End Time'])
                 }))
-                .filter(appt => appt.parsedStartTime && appt['Practitioner ID']);
+                .filter(appt => appt.parsedStartTime && appt.parsedEndTime && appt['Practitioner ID']);
             
             // Pre-calculate first appointment for all patients globally for efficiency
             allEvents.filter(e => e['PatientID(s)']).sort((a, b) => a.parsedStartTime - b.parsedStartTime).forEach(e => {
@@ -348,6 +367,8 @@
         function updateDashboard() {
             const practitionerSummaryContent = document.getElementById('practitioner-summary-content');
             const patientJourneyContent = document.getElementById('patient-journey-content');
+            const groupClassSection = document.getElementById('group-class-section');
+            const groupClassContent = document.getElementById('group-class-content');
             
             const selectedPractitionerId = document.getElementById('practitioner-select').value;
             const selectedPractitionerName = document.getElementById('practitioner-select').options[document.getElementById('practitioner-select').selectedIndex].text;
@@ -357,6 +378,7 @@
             if (!selectedYear || !selectedWeek) {
                 practitionerSummaryContent.innerHTML = `<p class="col-span-full text-center text-gray-400">Please select a year and week.</p>`;
                 patientJourneyContent.innerHTML = '';
+                groupClassSection.classList.add('hidden');
                 return;
             }
             
@@ -385,15 +407,30 @@
                            invDate < weekEndDate;
                 });
                 
-                const totalAppointments = practitionerAppointmentsThisWeek.length;
+                const totalBookedAppointments = practitionerAppointmentsThisWeek.length;
+                
+                const practitionerFixedHours = PRACTITIONER_HOURS[selectedPractitionerName] || 0;
+                const practitionerFixedMinutes = practitionerFixedHours * 60;
+                
+                const attendedAppointmentsTime = practitionerAppointmentsThisWeek.filter(a => parseInt(a['Number of Patients'], 10) > 0);
+                const totalAttendedMinutes = attendedAppointmentsTime.reduce((total, appt) => total + (appt.parsedEndTime - appt.parsedStartTime) / 60000, 0);
+                const utilizationRate = practitionerFixedMinutes > 0 ? (totalAttendedMinutes / practitionerFixedMinutes) * 100 : 0;
+                
                 const weeklyBilledRevenue = practitionerInvoicesThisWeek.reduce((sum, inv) => sum + parseFloat(inv['Invoice Amount'] || 0), 0);
                 
                 const cancelledAppointments = practitionerAppointmentsThisWeek.filter(a => a['Cancellation Time'] && a['Cancellation Time'].trim() !== '' && a['Cancellation Time'].toLowerCase() !== 'n/a').length;
-                const cancellationRate = totalAppointments > 0 ? (cancelledAppointments / totalAppointments) * 100 : 0;
                 
-                const didNotAttendCount = practitionerAppointmentsThisWeek.filter(a => a['Did Not Arrive'] === 'TRUE').length;
-                const didNotAttendRate = totalAppointments > 0 ? (didNotAttendCount / totalAppointments) * 100 : 0;
+                const didNotAttendCount = practitionerAppointmentsThisWeek.filter(a => a['Did Not Arrive']?.trim().toLowerCase() === 'true').length;
+
+                const totalCompletedAppointments = totalBookedAppointments - cancelledAppointments - didNotAttendCount;
                 
+                const didNotAttendRate = totalBookedAppointments > 0 ? (didNotAttendCount / totalBookedAppointments) * 100 : 0;
+                
+                const cancellationRate = totalBookedAppointments > 0 ? (cancelledAppointments / totalBookedAppointments) * 100 : 0;
+                
+                const finalNotesCount = practitionerAppointmentsThisWeek.filter(a => a['Treatment Notes Status'] === 'Final').length;
+                const treatmentNoteCompletionRate = totalBookedAppointments > 0 ? (finalNotesCount / totalBookedAppointments) * 100 : 0;
+
                 const uniquePatientsThisWeek = [...new Set(practitionerAppointmentsThisWeek.map(a => a['PatientID(s)']).filter(id => id))];
                 
                 const newPatientIdsThisWeek = uniquePatientsThisWeek.filter(patientId => {
@@ -403,13 +440,11 @@
                 const newPatientCount = newPatientIdsThisWeek.length;
                 const newPatientPercent = uniquePatientsThisWeek.length > 0 ? (newPatientCount / uniquePatientsThisWeek.length) * 100 : 0;
 
-                const pvaCliniko = newPatientCount > 0 ? totalAppointments / newPatientCount : 0;
+                const pvaCliniko = newPatientCount > 0 ? totalCompletedAppointments / newPatientCount : 0;
                 
-                // IAR % Calculation
                 const newPatientsRebooked = newPatientIdsThisWeek.filter(patientId => allEvents.some(appt => appt['PatientID(s)'] === patientId && appt.parsedStartTime >= weekEndDate)).length;
                 const iarRate = newPatientCount > 0 ? (newPatientsRebooked / newPatientCount) * 100 : 0;
                 
-                // PVA (3 Month) Calculation
                 const threeMonthsAgo = new Date(weekStartDate);
                 threeMonthsAgo.setUTCMonth(threeMonthsAgo.getUTCMonth() - 3);
 
@@ -434,23 +469,25 @@
                 });
                 const pva3Month = newPatientCohort.length > 0 ? (totalFollowUps + newPatientCohort.length) / newPatientCohort.length : 0;
 
-                // Correct Rebooking % Calculation
                 const allPatientsRebooked = uniquePatientsThisWeek.filter(patientId => allEvents.some(appt => appt['PatientID(s)'] === patientId && appt.parsedStartTime >= weekEndDate)).length;
                 const rebookingRate = uniquePatientsThisWeek.length > 0 ? (allPatientsRebooked / uniquePatientsThisWeek.length) * 100 : 0;
                 
-                const avgRevenuePerAppointment = totalAppointments > 0 ? weeklyBilledRevenue / totalAppointments : 0;
+                const avgRevenuePerAppointment = totalCompletedAppointments > 0 ? weeklyBilledRevenue / totalCompletedAppointments : 0;
                 
                 practitionerSummaryContent.innerHTML = '';
                 patientJourneyContent.innerHTML = '';
                 
                 const summaryMetrics = [
-                    { key: 'totalAppointments', title: 'Total Appointments', value: totalAppointments, subtitle: 'All available slots' },
+                    { key: 'totalBookedAppointments', title: 'Total Booked Appointments', value: totalBookedAppointments, subtitle: 'All available slots' },
+                    { key: 'totalCompletedAppointments', title: 'Total Completed Appointments', value: totalCompletedAppointments, subtitle: `${totalCompletedAppointments} of ${totalBookedAppointments} booked` },
+                    { key: 'utilizationRate', title: 'Utilization %', value: `${utilizationRate.toFixed(1)}%`, subtitle: `${(totalAttendedMinutes / 60).toFixed(1)} of ${practitionerFixedHours.toFixed(1)} hours` },
                     { key: 'weeklyBilledRevenue', title: 'Weekly Billed Revenue', value: formatCurrency(weeklyBilledRevenue), subtitle: 'Total value of invoices' },
-                    { key: 'cancellationRate', title: 'Cancellation Rate', value: `${cancellationRate.toFixed(1)}%`, subtitle: `${cancelledAppointments} of ${totalAppointments} appointments` },
-                    { key: 'didNotAttendRate', title: 'Did Not Attend %', value: `${didNotAttendRate.toFixed(1)}%`, subtitle: `${didNotAttendCount} of ${totalAppointments} appointments` },
+                    { key: 'cancellationRate', title: 'Cancellation Rate', value: `${cancellationRate.toFixed(1)}%`, subtitle: `${cancelledAppointments} of ${totalBookedAppointments} appointments` },
+                    { key: 'didNotAttendRate', title: 'Did Not Attend %', value: `${didNotAttendRate.toFixed(1)}%`, subtitle: `${didNotAttendCount} of ${totalBookedAppointments} appointments` },
                     { key: 'newPatientPercent', title: '% of New Patients', value: `${newPatientPercent.toFixed(1)}%`, subtitle: `Of ${uniquePatientsThisWeek.length} unique patients` },
                     { key: 'rebookingRate', title: 'Rebooking %', value: `${rebookingRate.toFixed(1)}%`, subtitle: 'Patients with future appts' },
-                    { key: 'avgRevenuePerAppointment', title: 'Avg. Revenue / Appt', value: formatCurrency(avgRevenuePerAppointment), subtitle: 'Based on total appts' },
+                    { key: 'avgRevenuePerAppointment', title: 'Avg. Revenue / Appt', value: formatCurrency(avgRevenuePerAppointment), subtitle: 'Based on completed appts' },
+                    { key: 'treatmentNoteCompletionRate', title: 'Note Completion %', value: `${treatmentNoteCompletionRate.toFixed(1)}%`, subtitle: `${finalNotesCount} of ${totalBookedAppointments} notes final`},
                 ];
                 
                 const journeyMetrics = [
@@ -460,11 +497,24 @@
                      { key: 'pva3Month', title: 'PVA (3 Month)', value: pva3Month.toFixed(1), subtitle: 'Rolling 3 month avg visits' },
                 ];
 
-                const createCardHTML = (metric, type) => {
-                    const bgColor = type === 'summary' ? 'bg-brand-light-green' : 'bg-brand-light-pink';
-                    const titleColor = type === 'summary' ? 'text-brand-dark-pink' : 'text-brand-dark-teal';
-                    const valueColor = type === 'summary' ? 'text-brand-dark-pink' : 'text-brand-dark-teal';
-                    const subtitleColor = type === 'summary' ? 'text-pink-900 opacity-70' : 'text-teal-900 opacity-70';
+                 const createCardHTML = (metric, type) => {
+                    let bgColor, titleColor, valueColor, subtitleColor;
+                    if (type === 'summary') {
+                        bgColor = 'bg-brand-light-green';
+                        titleColor = 'text-brand-dark-pink';
+                        valueColor = 'text-brand-dark-pink';
+                        subtitleColor = 'text-pink-900 opacity-70';
+                    } else if (type === 'journey') {
+                        bgColor = 'bg-brand-light-pink';
+                        titleColor = 'text-brand-dark-teal';
+                        valueColor = 'text-brand-dark-teal';
+                        subtitleColor = 'text-teal-900 opacity-70';
+                    } else { // 'group'
+                        bgColor = 'bg-brand-light-blue';
+                        titleColor = 'text-brand-dark-blue';
+                        valueColor = 'text-brand-dark-blue';
+                        subtitleColor = 'text-blue-900 opacity-70';
+                    }
 
                     return `
                     <div class="${bgColor} p-4 rounded-lg shadow-lg flex flex-col justify-between metric-card" data-metric="${metric.key}">
@@ -478,15 +528,44 @@
 
                 summaryMetrics.forEach(metric => practitionerSummaryContent.innerHTML += createCardHTML(metric, 'summary'));
                 journeyMetrics.forEach(metric => patientJourneyContent.innerHTML += createCardHTML(metric, 'journey'));
+
+                // Group Class Calculations
+                const groupClassesThisWeek = practitionerAppointmentsThisWeek.filter(a => parseInt(a['Maximum Number of Patients'], 10) > 1);
+
+                if (groupClassesThisWeek.length > 0) {
+                    const totalClasses = groupClassesThisWeek.length;
+                    const totalAttendance = groupClassesThisWeek.reduce((sum, cls) => sum + parseInt(cls['Number of Patients'] || 0), 0);
+                    const totalCancellations = groupClassesThisWeek.reduce((sum, cls) => sum + parseInt(cls['Number of Cancellations'] || 0), 0);
+                    
+                    const groupRevenue = practitionerInvoicesThisWeek
+                        .filter(inv => parseFloat(inv['Invoice Amount']) === 27.50)
+                        .reduce((sum, inv) => sum + parseFloat(inv['Invoice Amount'] || 0), 0);
+                    
+                    const groupRevenuePercent = weeklyBilledRevenue > 0 ? (groupRevenue / weeklyBilledRevenue) * 100 : 0;
+
+                    const groupMetrics = [
+                        { key: 'totalClasses', title: 'Total Classes Held', value: totalClasses, subtitle: 'This week' },
+                        { key: 'totalGroupAttendance', title: 'Total Class Attendance', value: totalAttendance, subtitle: 'Number of participants' },
+                        { key: 'totalGroupCancellations', title: 'Class Cancellations', value: totalCancellations, subtitle: 'Recorded cancellations' },
+                        { key: 'totalGroupRevenue', title: 'Total Group Revenue', value: formatCurrency(groupRevenue), subtitle: 'From all classes' },
+                        { key: 'groupRevenuePercent', title: '% of Prac Revenue', value: `${groupRevenuePercent.toFixed(1)}%`, subtitle: 'Group contribution to total' },
+                    ];
+                    
+                    groupClassContent.innerHTML = '';
+                    groupMetrics.forEach(metric => groupClassContent.innerHTML += createCardHTML(metric, 'group'));
+                    groupClassSection.classList.remove('hidden');
+                } else {
+                    groupClassSection.classList.add('hidden');
+                }
             }
 
             // Clinic-wide calculations (always run)
             const clinicEventsThisWeek = allEvents.filter(evt => evt.parsedStartTime >= weekStartDate && evt.parsedStartTime < weekEndDate);
             const clinicAppointmentsThisWeek = clinicEventsThisWeek.filter(a => parseInt(a['Maximum Number of Patients'], 10) > 0);
 
-            const clinicCompletedAppointments = clinicAppointmentsThisWeek.filter(a => a['Patient Arrived'] === 'TRUE').length;
+            const clinicCompletedAppointments = clinicAppointmentsThisWeek.filter(a => parseInt(a['Number of Patients'], 10) > 0).length;
             const clinicCancelledAppointments = clinicAppointmentsThisWeek.filter(a => a['Cancellation Time'] && a['Cancellation Time'].trim() !== '' && a['Cancellation Time'].toLowerCase() !== 'n/a').length;
-            const clinicDidNotAttendCount = clinicAppointmentsThisWeek.filter(a => a['Did Not Arrive'] === 'TRUE').length;
+            const clinicDidNotAttendCount = clinicAppointmentsThisWeek.filter(a => a['Did Not Arrive']?.trim().toLowerCase() === 'true').length;
             const clinicUniquePatientsThisWeek = [...new Set(clinicAppointmentsThisWeek.map(a => a['PatientID(s)']).filter(id => id))];
             
             const clinicNewPatientsThisWeek = clinicUniquePatientsThisWeek.filter(patientId => {
@@ -523,7 +602,7 @@
         function calculateYearlyMetrics(practitionerId, practitionerName, year) {
             const weeksInYear = 53;
             const yearlyMetrics = {};
-            const metricKeys = ['totalAppointments', 'weeklyBilledRevenue', 'cancellationRate', 'didNotAttendRate', 'newPatients', 'newPatientPercent', 'rebookingRate', 'avgRevenuePerAppointment', 'pvaCliniko', 'iarRate', 'pva3Month'];
+            const metricKeys = ['totalBookedAppointments', 'totalCompletedAppointments', 'weeklyBilledRevenue', 'cancellationRate', 'didNotAttendRate', 'newPatients', 'newPatientPercent', 'rebookingRate', 'avgRevenuePerAppointment', 'pvaCliniko', 'iarRate', 'pva3Month', 'treatmentNoteCompletionRate', 'utilizationRate', 'totalClasses', 'totalGroupAttendance', 'totalGroupCancellations', 'totalGroupRevenue', 'groupRevenuePercent'];
             metricKeys.forEach(key => yearlyMetrics[key] = Array(weeksInYear).fill(0));
 
             const practitionerEventsThisYear = allEvents.filter(e => 
@@ -535,6 +614,9 @@
                 const invDate = parseInvoiceDate(inv['Issue Date']); 
                 return invDate && inv.Practitioner.trim() === practitionerName.trim() && invDate.getUTCFullYear() === year;
             });
+            
+            const practitionerFixedHours = PRACTITIONER_HOURS[practitionerName] || 0;
+            const practitionerFixedMinutes = practitionerFixedHours * 60;
 
             for (let week = 1; week <= weeksInYear; week++) {
                 const weekIndex = week - 1;
@@ -549,12 +631,17 @@
                     return invDate >= weekStartDate && invDate < weekEndDate;
                 });
 
-                const totalAppointments = apptsThisWeek.length;
-                if (totalAppointments === 0) continue;
+                const totalBooked = apptsThisWeek.length;
+                if (totalBooked === 0 && practitionerFixedMinutes === 0) continue;
+                
+                const attendedMinutes = apptsThisWeek.filter(a => parseInt(a['Number of Patients'], 10) > 0)
+                    .reduce((total, appt) => total + (appt.parsedEndTime - appt.parsedStartTime) / 60000, 0);
                 
                 const billedRevenue = invoicesThisWeek.reduce((sum, inv) => sum + parseFloat(inv['Invoice Amount'] || 0), 0);
                 const cancelled = apptsThisWeek.filter(a => a['Cancellation Time'] && a['Cancellation Time'].trim() !== '' && a['Cancellation Time'].toLowerCase() !== 'n/a').length;
-                const didNotAttend = apptsThisWeek.filter(a => a['Did Not Arrive'] === 'TRUE').length;
+                const didNotAttend = apptsThisWeek.filter(a => a['Did Not Arrive']?.trim().toLowerCase() === 'true').length;
+                const totalCompleted = totalBooked - cancelled - didNotAttend;
+                const finalNotes = apptsThisWeek.filter(a => a['Treatment Notes Status'] === 'Final').length;
                 const uniquePatients = [...new Set(apptsThisWeek.map(a => a['PatientID(s)']).filter(id => id))];
                 const newPatientIds = uniquePatients.filter(id => {
                     const firstDate = globalPatientFirstAppointment[id];
@@ -566,7 +653,6 @@
 
                 const allPatientsRebooked = uniquePatients.filter(id => allEvents.some(a => a['PatientID(s)'] === id && a.parsedStartTime >= weekEndDate)).length;
                 
-                // PVA 3 Month for Chart
                 const threeMonthsAgo = new Date(weekStartDate);
                 threeMonthsAgo.setUTCMonth(threeMonthsAgo.getUTCMonth() - 3);
                 const cohort = Object.keys(globalPatientFirstAppointment).filter(id => {
@@ -581,18 +667,32 @@
                     threeMonthsAfter.setUTCMonth(threeMonthsAfter.getUTCMonth() + 3);
                     followUps += allEvents.filter(a => a['PatientID(s)'] === id && a.parsedStartTime > firstApptDate && a.parsedStartTime <= threeMonthsAfter).length;
                 });
-
-                yearlyMetrics.totalAppointments[weekIndex] = totalAppointments;
+                
+                // Group class metrics for chart
+                const groupClasses = apptsThisWeek.filter(a => parseInt(a['Maximum Number of Patients'], 10) > 1);
+                const groupRevenue = invoicesThisWeek
+                    .filter(inv => parseFloat(inv['Invoice Amount']) === 27.50)
+                    .reduce((sum, inv) => sum + parseFloat(inv['Invoice Amount'] || 0), 0);
+                
+                yearlyMetrics.totalBookedAppointments[weekIndex] = totalBooked;
+                yearlyMetrics.totalCompletedAppointments[weekIndex] = totalCompleted;
+                yearlyMetrics.utilizationRate[weekIndex] = practitionerFixedMinutes > 0 ? (attendedMinutes / practitionerFixedMinutes) * 100 : 0;
                 yearlyMetrics.weeklyBilledRevenue[weekIndex] = billedRevenue;
-                yearlyMetrics.cancellationRate[weekIndex] = (cancelled / totalAppointments) * 100;
-                yearlyMetrics.didNotAttendRate[weekIndex] = (didNotAttend / totalAppointments) * 100;
+                yearlyMetrics.cancellationRate[weekIndex] = totalBooked > 0 ? (cancelled / totalBooked) * 100 : 0;
+                yearlyMetrics.didNotAttendRate[weekIndex] = totalBooked > 0 ? (didNotAttend / totalBooked) * 100 : 0;
+                yearlyMetrics.treatmentNoteCompletionRate[weekIndex] = totalBooked > 0 ? (finalNotes / totalBooked) * 100 : 0;
                 yearlyMetrics.newPatients[weekIndex] = newPatientsCount;
                 yearlyMetrics.newPatientPercent[weekIndex] = uniquePatients.length > 0 ? (newPatientsCount / uniquePatients.length) * 100 : 0;
                 yearlyMetrics.rebookingRate[weekIndex] = uniquePatients.length > 0 ? (allPatientsRebooked / uniquePatients.length) * 100 : 0;
-                yearlyMetrics.avgRevenuePerAppointment[weekIndex] = totalAppointments > 0 ? billedRevenue / totalAppointments : 0;
-                yearlyMetrics.pvaCliniko[weekIndex] = newPatientsCount > 0 ? totalAppointments / newPatientsCount : 0;
+                yearlyMetrics.avgRevenuePerAppointment[weekIndex] = totalCompleted > 0 ? billedRevenue / totalCompleted : 0;
+                yearlyMetrics.pvaCliniko[weekIndex] = newPatientsCount > 0 ? totalCompleted / newPatientsCount : 0;
                 yearlyMetrics.iarRate[weekIndex] = newPatientsCount > 0 ? (newPatientsRebooked / newPatientsCount) * 100 : 0;
                 yearlyMetrics.pva3Month[weekIndex] = cohort.length > 0 ? (followUps + cohort.length) / cohort.length : 0;
+                yearlyMetrics.totalClasses[weekIndex] = groupClasses.length;
+                yearlyMetrics.totalGroupAttendance[weekIndex] = groupClasses.reduce((sum, cls) => sum + parseInt(cls['Number of Patients'] || 0), 0);
+                yearlyMetrics.totalGroupCancellations[weekIndex] = groupClasses.reduce((sum, cls) => sum + parseInt(cls['Number of Cancellations'] || 0), 0);
+                yearlyMetrics.totalGroupRevenue[weekIndex] = groupRevenue;
+                yearlyMetrics.groupRevenuePercent[weekIndex] = billedRevenue > 0 ? (groupRevenue / billedRevenue) * 100 : 0;
 
             }
             return yearlyMetrics;
@@ -620,8 +720,8 @@
             const weeksInYear = 53;
             const labels = Array.from({ length: weeksInYear }, (_, i) => `W${i + 1}`);
 
-            const isCurrency = metricType === 'weeklyBilledRevenue' || metricType === 'avgRevenuePerAppointment';
-            const isPercent = metricType.toLowerCase().includes('rate') || metricType.toLowerCase().includes('percent');
+            const isCurrency = metricType.toLowerCase().includes('revenue');
+            const isPercent = metricType.toLowerCase().includes('rate') || metricType.toLowerCase().includes('percent') || metricType.toLowerCase().includes('completion');
 
             if (modalChart) modalChart.destroy();
             const modalCtx = document.getElementById('modal-chart').getContext('2d');
