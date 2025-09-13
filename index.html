@@ -193,7 +193,7 @@
             treatmentNoteCompletionRate: 90,
             iarRate: 95,
             pvaCliniko: 8,
-            pva3Month: 8,
+            pvaMatured3Mo: 8,
             totalClasses: 5,
             totalGroupAttendance: 30,
             classCancellationRate: 15
@@ -485,29 +485,32 @@
                 const newPatientsRebooked = newPatientIdsThisWeek.filter(patientId => allEvents.some(appt => appt['PatientID(s)'] === patientId && appt.parsedStartTime >= weekEndDate)).length;
                 const iarRate = newPatientCount > 0 ? (newPatientsRebooked / newPatientCount) * 100 : 0;
                 
-                const threeMonthsAgo = new Date(weekStartDate);
-                threeMonthsAgo.setUTCMonth(threeMonthsAgo.getUTCMonth() - 3);
+                // --- PVA (Matured 3-Month) Calculation ---
+                const cohortEndDate = new Date(weekStartDate);
+                cohortEndDate.setUTCMonth(cohortEndDate.getUTCMonth() - 3);
+                const cohortStartDate = new Date(cohortEndDate);
+                cohortStartDate.setUTCMonth(cohortStartDate.getUTCMonth() - 3);
 
-                const newPatientCohort = Object.keys(globalPatientFirstAppointment).filter(patientId => {
+                const maturedNewPatientCohort = Object.keys(globalPatientFirstAppointment).filter(patientId => {
                     const firstAppt = globalPatientFirstAppointment[patientId];
                     const firstApptPractitioner = allEvents.find(e => e['PatientID(s)'] === patientId && e.parsedStartTime.getTime() === firstAppt.getTime());
                     return firstApptPractitioner && firstApptPractitioner['Practitioner ID'] === selectedPractitionerId &&
-                           firstAppt >= threeMonthsAgo && firstAppt < weekStartDate;
+                           firstAppt >= cohortStartDate && firstAppt < cohortEndDate;
                 });
 
-                let totalFollowUps = 0;
-                newPatientCohort.forEach(patientId => {
+                let maturedTotalAppointments = 0;
+                maturedNewPatientCohort.forEach(patientId => {
                     const firstApptDate = globalPatientFirstAppointment[patientId];
                     const threeMonthsAfterFirstAppt = new Date(firstApptDate);
                     threeMonthsAfterFirstAppt.setUTCMonth(threeMonthsAfterFirstAppt.getUTCMonth() + 3);
 
-                    totalFollowUps += allEvents.filter(appt => 
+                    maturedTotalAppointments += allEvents.filter(appt => 
                         appt['PatientID(s)'] === patientId &&
-                        appt.parsedStartTime > firstApptDate &&
-                        appt.parsedStartTime <= threeMonthsAfterFirstAppt
+                        appt.parsedStartTime >= firstApptDate &&
+                        appt.parsedStartTime < threeMonthsAfterFirstAppt
                     ).length;
                 });
-                const pva3Month = newPatientCohort.length > 0 ? (totalFollowUps + newPatientCohort.length) / newPatientCohort.length : 0;
+                const pvaMatured3Mo = maturedNewPatientCohort.length > 0 ? maturedTotalAppointments / maturedNewPatientCohort.length : 0;
 
                 const allPatientsRebooked = uniquePatientsThisWeek.filter(patientId => allEvents.some(appt => appt['PatientID(s)'] === patientId && appt.parsedStartTime >= weekEndDate)).length;
                 const rebookingRate = uniquePatientsThisWeek.length > 0 ? (allPatientsRebooked / uniquePatientsThisWeek.length) * 100 : 0;
@@ -534,7 +537,7 @@
                      { key: 'newPatients', title: 'New Patients', value: newPatientCount, subtitle: 'First visit this week' },
                      { key: 'iarRate', title: 'IAR %', value: `${iarRate.toFixed(1)}%`, subtitle: 'New patients with future appt' },
                      { key: 'pvaCliniko', title: 'PVA (Cliniko)', value: pvaCliniko.toFixed(1), subtitle: 'Appts / New Patients' },
-                     { key: 'pva3Month', title: 'PVA (3 Month)', value: pva3Month.toFixed(1), subtitle: 'Rolling 3 month avg visits' },
+                     { key: 'pvaMatured3Mo', title: 'PVA (Matured 3-Mo)', value: pvaMatured3Mo.toFixed(1), subtitle: 'Avg visits for past cohort' },
                 ];
 
                  const createCardHTML = (metric, type) => {
@@ -645,7 +648,7 @@
         function calculateYearlyMetrics(practitionerId, practitionerName, year) {
             const weeksInYear = 53;
             const yearlyMetrics = {};
-            const metricKeys = ['totalBookedAppointments', 'totalCompletedAppointments', 'weeklyBilledRevenue', 'cancellationRate', 'didNotAttendRate', 'newPatients', 'newPatientPercent', 'rebookingRate', 'avgRevenuePerAppointment', 'pvaCliniko', 'iarRate', 'pva3Month', 'treatmentNoteCompletionRate', 'utilizationRate', 'totalClasses', 'totalGroupAttendance', 'totalGroupCancellations', 'totalGroupRevenue', 'groupRevenuePercent', 'classCancellationRate'];
+            const metricKeys = ['totalBookedAppointments', 'totalCompletedAppointments', 'weeklyBilledRevenue', 'cancellationRate', 'didNotAttendRate', 'newPatients', 'newPatientPercent', 'rebookingRate', 'avgRevenuePerAppointment', 'pvaCliniko', 'iarRate', 'pvaMatured3Mo', 'treatmentNoteCompletionRate', 'utilizationRate', 'totalClasses', 'totalGroupAttendance', 'totalGroupCancellations', 'totalGroupRevenue', 'groupRevenuePercent', 'classCancellationRate'];
             metricKeys.forEach(key => yearlyMetrics[key] = Array(weeksInYear).fill(0));
 
             const practitionerEventsThisYear = allEvents.filter(e => 
@@ -657,10 +660,16 @@
                 const invDate = parseInvoiceDate(inv['Issue Date']); 
                 return invDate && inv.Practitioner.trim() === practitionerName.trim() && invDate.getUTCFullYear() === year;
             });
+            
+            const now = new Date();
 
             for (let week = 1; week <= weeksInYear; week++) {
                 const weekIndex = week - 1;
                 const weekStartDate = getStartOfWeek(year, week);
+                
+                // Only calculate metrics for weeks that have already started
+                if (weekStartDate > now) continue;
+
                 const weekEndDate = new Date(weekStartDate);
                 weekEndDate.setUTCDate(weekStartDate.getUTCDate() + 7);
 
@@ -696,19 +705,23 @@
 
                 const allPatientsRebooked = uniquePatients.filter(id => allEvents.some(a => a['PatientID(s)'] === id && a.parsedStartTime >= weekEndDate)).length;
                 
-                const threeMonthsAgo = new Date(weekStartDate);
-                threeMonthsAgo.setUTCMonth(threeMonthsAgo.getUTCMonth() - 3);
+                // Matured PVA for Chart
+                const cohortEndDate = new Date(weekStartDate);
+                cohortEndDate.setUTCMonth(cohortEndDate.getUTCMonth() - 3);
+                const cohortStartDate = new Date(cohortEndDate);
+                cohortStartDate.setUTCMonth(cohortStartDate.getUTCMonth() - 3);
+                
                 const cohort = Object.keys(globalPatientFirstAppointment).filter(id => {
                     const firstAppt = globalPatientFirstAppointment[id];
                     const firstPrac = allEvents.find(e => e['PatientID(s)'] === id && e.parsedStartTime.getTime() === firstAppt.getTime());
-                    return firstPrac && firstPrac['Practitioner ID'] === practitionerId && firstAppt >= threeMonthsAgo && firstAppt < weekStartDate;
+                    return firstPrac && firstPrac['Practitioner ID'] === practitionerId && firstAppt >= cohortStartDate && firstAppt < cohortEndDate;
                 });
                 let followUps = 0;
                 cohort.forEach(id => {
                     const firstApptDate = globalPatientFirstAppointment[id];
                     const threeMonthsAfter = new Date(firstApptDate);
                     threeMonthsAfter.setUTCMonth(threeMonthsAfter.getUTCMonth() + 3);
-                    followUps += allEvents.filter(a => a['PatientID(s)'] === id && a.parsedStartTime > firstApptDate && a.parsedStartTime <= threeMonthsAfter).length;
+                    followUps += allEvents.filter(a => a['PatientID(s)'] === id && a.parsedStartTime >= firstApptDate && a.parsedStartTime < threeMonthsAfter).length;
                 });
                 
                 // Group class metrics for chart
@@ -733,7 +746,7 @@
                 yearlyMetrics.avgRevenuePerAppointment[weekIndex] = totalCompleted > 0 ? billedRevenue / totalCompleted : 0;
                 yearlyMetrics.pvaCliniko[weekIndex] = newPatientsCount > 0 ? totalCompleted / newPatientsCount : 0;
                 yearlyMetrics.iarRate[weekIndex] = newPatientsCount > 0 ? (newPatientsRebooked / newPatientsCount) * 100 : 0;
-                yearlyMetrics.pva3Month[weekIndex] = cohort.length > 0 ? (followUps + cohort.length) / cohort.length : 0;
+                yearlyMetrics.pvaMatured3Mo[weekIndex] = cohort.length > 0 ? followUps / cohort.length : 0;
                 yearlyMetrics.totalClasses[weekIndex] = groupClasses.length;
                 yearlyMetrics.totalGroupAttendance[weekIndex] = groupAttendance;
                 yearlyMetrics.totalGroupCancellations[weekIndex] = groupCancellations;
