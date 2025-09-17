@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spectrum Health Co Clinic Dashboards - Login</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'brand-white': '#FFFFFF',
+                        'brand-dark-pink': '#BE185D',
+                        'brand-dark-teal': '#0F766E',
+                        'brand-gray': '#F3F4F6',
+                        'brand-text-dark': '#1F2937',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+    </style>
+</head>
+<body class="bg-brand-gray flex items-center justify-center h-screen">
+
+    <div class="w-full max-w-md p-8 space-y-8 bg-brand-white rounded-2xl shadow-lg text-center">
+        <div>
+            <img src="https://raw.githubusercontent.com/NickPez36/Cliniko_Dashy/main/assets/logo.webp" alt="Clinic Logo" class="h-48 w-48 mx-auto mb-6">
+            <h1 class="text-3xl font-bold text-brand-text-dark">Spectrum Health Co Clinic Dashboards</h1>
+        </div>
+        
+        <form id="login-form" class="mt-8 space-y-6">
+            <div>
+                <label for="password" class="sr-only">Password</label>
+                <input id="password" name="password" type="password" required class="appearance-none rounded-md relative block w-full px-3 py-3 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-brand-dark-teal focus:border-brand-dark-teal focus:z-10 sm:text-sm" placeholder="Enter Password">
+            </div>
+            
+            <p id="error-message" class="text-sm text-brand-dark-pink hidden">Incorrect password. Please try again.</p>
+
+            <div>
+                <button type="submit" class="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-brand-dark-teal hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-dark-teal">
+                    Login
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <script>
+        document.getElementById('login-form').addEventListener('submit', function(event) {
+            event.preventDefault(); // Prevent the form from submitting traditionally
+            
+            const passwordInput = document.getElementById('password');
+            const errorMessage = document.getElementById('error-message');
+            const correctPassword = 'Cadbury1!';
+
+            if (passwordInput.value === correctPassword) {
+                // On successful login, redirect to the dashboard page
+                window.location.href = './dashboard.html';
+            } else {
+                // Show an error message
+                errorMessage.classList.remove('hidden');
+                passwordInput.classList.add('border-red-500');
+                passwordInput.value = ''; // Clear the incorrect password
+            }
+        });
+    </script>
+
+</body>
+</html>
+
