@@ -237,32 +237,33 @@
             return 0; // Default if no period matches
         }
 
-        function parseClinikoDate(dateString) {
+        function robustDateParser(dateString) {
             if (!dateString || typeof dateString !== 'string') return null;
-            const match = dateString.match(/^(\d{4})-(\d{2})-(\d{2})\s(\d{2}):(\d{2}):(\d{2})/);
+            
+            // Format 1: YYYY-MM-DD HH:MM:SS Z
+            let match = dateString.match(/^(\d{4})-(\d{2})-(\d{2})\s(\d{2}):(\d{2}):(\d{2})/);
             if (match) {
                 const [_, year, month, day, hour, minute, second] = match.map(Number);
                 return new Date(Date.UTC(year, month - 1, day, hour, minute, second));
             }
-            return null;
-        }
-        
-        function parseInvoiceDate(dateString) {
-            if (!dateString || typeof dateString !== 'string') return null;
-            const standardizedDateString = dateString.trim().replace(/-/g, '/');
-            let match = standardizedDateString.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+
+            // Format 2: DD/MM/YYYY HH:MM
+            match = dateString.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s(\d{2}):(\d{2})/);
+            if (match) {
+                const [_, day, month, year, hour, minute] = match.map(Number);
+                return new Date(Date.UTC(year, month - 1, day, hour, minute));
+            }
+            
+            // Fallback for just date: DD/MM/YYYY
+             match = dateString.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
             if (match) {
                 const [_, day, month, year] = match.map(Number);
                 return new Date(Date.UTC(year, month - 1, day));
             }
-            match = standardizedDateString.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})/);
-            if (match) {
-                const [_, year, month, day] = match.map(Number);
-                return new Date(Date.UTC(year, month - 1, day));
-            }
-            return null;
-        }
 
+            return null; // Return null if no format matches
+        }
+        
         function getWeekNumber(d) {
             d = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
             d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
@@ -348,8 +349,8 @@
             allEvents = appointmentsRaw
                 .map(appt => ({
                     ...appt,
-                    parsedStartTime: parseClinikoDate(appt['Start Time']),
-                    parsedEndTime: parseClinikoDate(appt['End Time'])
+                    parsedStartTime: robustDateParser(appt['Start Time']),
+                    parsedEndTime: robustDateParser(appt['End Time'])
                 }))
                 .filter(appt => appt.parsedStartTime && appt.parsedEndTime && appt['Practitioner ID']);
             
@@ -362,19 +363,15 @@
             });
 
             const practitioners = [...new Set(allEvents.map(a => a.Practitioner))]
-                .map(name => {
-                    const record = allEvents.find(a => a.Practitioner === name);
-                    return { id: record['Practitioner ID'], name };
-                })
-                .filter(p => {
-                    if (!p.name || !p.id || !p.name.includes(' ')) return false;
-                    const name = p.name.trim().toLowerCase();
+                .filter(name => {
+                    if (!name || !name.includes(' ')) return false;
+                    const lowerName = name.trim().toLowerCase();
                     const invalidKeywords = ['true', 'false', 'n/a', 'katalyst', 'cliniko', 'spectrum', 'headaches', 'exercise physiology'];
-                    if (name.length <= 4 || !isNaN(name)) return false;
-                    return !invalidKeywords.some(keyword => name.includes(keyword));
+                    if (lowerName.length <= 4 || !isNaN(lowerName)) return false;
+                    return !invalidKeywords.some(keyword => lowerName.includes(keyword));
                 });
                 
-            practitioners.forEach(p => practitionerSelect.add(new Option(p.name, p.id)));
+            practitioners.forEach(name => practitionerSelect.add(new Option(name, name)));
 
             function populateYears() {
                 yearSelect.innerHTML = '';
@@ -441,8 +438,7 @@
             const clinicGroupContent = document.getElementById('clinic-group-class-content');
             
             // Filter values
-            const selectedPractitionerId = document.getElementById('practitioner-select').value;
-            const selectedPractitionerName = document.getElementById('practitioner-select').options[document.getElementById('practitioner-select').selectedIndex].text;
+            const selectedPractitionerName = document.getElementById('practitioner-select').value;
             const selectedYear = parseInt(document.getElementById('year-select').value);
             const selectedWeek = parseInt(document.getElementById('week-select').value);
             
@@ -468,11 +464,11 @@
             weekEndDate.setUTCDate(weekStartDate.getUTCDate() + 7);
 
             // --- Practitioner Dashboard Calculations ---
-            if(selectedPractitionerId) {
-                const practitionerEventsThisWeek = allEvents.filter(evt => evt['Practitioner ID'] === selectedPractitionerId && evt.parsedStartTime >= weekStartDate && evt.parsedStartTime < weekEndDate);
+            if(selectedPractitionerName) {
+                const practitionerEventsThisWeek = allEvents.filter(evt => evt['Practitioner'] === selectedPractitionerName && evt.parsedStartTime >= weekStartDate && evt.parsedStartTime < weekEndDate);
                 const practitionerAppointmentsThisWeek = practitionerEventsThisWeek.filter(a => parseInt(a['Maximum Number of Patients'], 10) > 0);
                 const practitionerInvoicesThisWeek = invoicesData.filter(inv => {
-                    const invDate = parseInvoiceDate(inv['Issue Date']); 
+                    const invDate = robustDateParser(inv['Issue Date']); 
                     return invDate && inv.Practitioner?.trim() === selectedPractitionerName.trim() && invDate >= weekStartDate && invDate < weekEndDate;
                 });
                 
@@ -502,7 +498,7 @@
                 const maturedNewPatientCohort = Object.keys(globalPatientFirstAppointment).filter(patientId => {
                     const firstAppt = globalPatientFirstAppointment[patientId];
                     const firstApptPractitioner = allEvents.find(e => e['PatientID(s)'] === patientId && e.parsedStartTime.getTime() === firstAppt.getTime());
-                    return firstApptPractitioner && firstApptPractitioner['Practitioner ID'] === selectedPractitionerId && firstAppt >= cohortStartDate && firstAppt < cohortEndDate;
+                    return firstApptPractitioner && firstApptPractitioner['Practitioner'] === selectedPractitionerName && firstAppt >= cohortStartDate && firstAppt < cohortEndDate;
                 });
                 let maturedTotalAppointments = 0;
                 maturedNewPatientCohort.forEach(patientId => {
@@ -667,8 +663,8 @@
         function calculatePractitionerYearlyMetrics(practitionerId, practitionerName, year) {
             const weeksInYear = 53; const yearlyMetrics = {}; const metricKeys = ['totalBookedAppointments', 'totalCompletedAppointments', 'weeklyBilledRevenue', 'cancellationRate', 'didNotAttendRate', 'newPatients', 'newPatientPercent', 'rebookingRate', 'avgRevenuePerAppointment', 'pvaCliniko', 'iarRate', 'pvaMatured3Mo', 'treatmentNoteCompletionRate', 'utilizationRate', 'totalClasses', 'totalGroupAttendance', 'totalGroupCancellations', 'totalGroupRevenue', 'groupRevenuePercent', 'classCancellationRate'];
             metricKeys.forEach(key => yearlyMetrics[key] = Array(weeksInYear).fill(0));
-            const practitionerEventsThisYear = allEvents.filter(e => e['Practitioner ID'] === practitionerId && e.parsedStartTime.getUTCFullYear() === year);
-            const practitionerInvoicesThisYear = invoicesData.filter(inv => { if (!inv['Issue Date'] || !inv.Practitioner) return false; const invDate = parseInvoiceDate(inv['Issue Date']); return invDate && inv.Practitioner.trim() === practitionerName.trim() && invDate.getUTCFullYear() === year; });
+            const practitionerEventsThisYear = allEvents.filter(e => e['Practitioner'] === practitionerName && e.parsedStartTime.getUTCFullYear() === year);
+            const practitionerInvoicesThisYear = invoicesData.filter(inv => { if (!inv['Issue Date'] || !inv.Practitioner) return false; const invDate = robustDateParser(inv['Issue Date']); return invDate && inv.Practitioner.trim() === practitionerName.trim() && invDate.getUTCFullYear() === year; });
             const now = new Date();
             for (let week = 1; week <= weeksInYear; week++) {
                 const weekIndex = week - 1; const weekStartDate = getStartOfWeek(year, week); if (weekStartDate > now) continue;
@@ -676,7 +672,7 @@
                 const practitionerFixedHours = getPractitionerHoursForDate(practitionerName, weekStartDate); const practitionerFixedMinutes = practitionerFixedHours * 60;
                 const eventsThisWeek = practitionerEventsThisYear.filter(e => e.parsedStartTime >= weekStartDate && e.parsedStartTime < weekEndDate);
                 const apptsThisWeek = eventsThisWeek.filter(a => parseInt(a['Maximum Number of Patients'], 10) > 0);
-                const invoicesThisWeek = practitionerInvoicesThisYear.filter(i => { const invDate = parseInvoiceDate(i['Issue Date']); return invDate >= weekStartDate && invDate < weekEndDate; });
+                const invoicesThisWeek = practitionerInvoicesThisYear.filter(i => { const invDate = robustDateParser(i['Issue Date']); return invDate >= weekStartDate && invDate < weekEndDate; });
                 const totalBooked = apptsThisWeek.length; if (totalBooked === 0 && practitionerFixedMinutes === 0) continue;
                 const attendedMinutes = apptsThisWeek.filter(a => parseInt(a['Number of Patients'], 10) > 0).reduce((total, appt) => total + (appt.parsedEndTime - appt.parsedStartTime) / 60000, 0);
                 const billedRevenue = invoicesThisWeek.reduce((sum, inv) => sum + parseFloat(inv['Invoice Amount'] || 0), 0);
@@ -690,7 +686,7 @@
                 const newPatientsRebooked = newPatientIds.filter(id => allEvents.some(a => a['PatientID(s)'] === id && a.parsedStartTime >= weekEndDate)).length;
                 const allPatientsRebooked = uniquePatients.filter(id => allEvents.some(a => a['PatientID(s)'] === id && a.parsedStartTime >= weekEndDate)).length;
                 const cohortEndDate = new Date(weekStartDate); cohortEndDate.setUTCMonth(cohortEndDate.getUTCMonth() - 3); const cohortStartDate = new Date(cohortEndDate); cohortStartDate.setUTCMonth(cohortStartDate.getUTCMonth() - 3);
-                const cohort = Object.keys(globalPatientFirstAppointment).filter(id => { const firstAppt = globalPatientFirstAppointment[id]; const firstPrac = allEvents.find(e => e['PatientID(s)'] === id && e.parsedStartTime.getTime() === firstAppt.getTime()); return firstPrac && firstPrac['Practitioner ID'] === practitionerId && firstAppt >= cohortStartDate && firstAppt < cohortEndDate; });
+                const cohort = Object.keys(globalPatientFirstAppointment).filter(id => { const firstAppt = globalPatientFirstAppointment[id]; const firstPrac = allEvents.find(e => e['PatientID(s)'] === id && e.parsedStartTime.getTime() === firstAppt.getTime()); return firstPrac && firstPrac['Practitioner'] === practitionerName && firstAppt >= cohortStartDate && firstAppt < cohortEndDate; });
                 let followUps = 0;
                 cohort.forEach(id => { const firstApptDate = globalPatientFirstAppointment[id]; const threeMonthsAfter = new Date(firstApptDate); threeMonthsAfter.setUTCMonth(threeMonthsAfter.getUTCMonth() + 3); followUps += allEvents.filter(a => a['PatientID(s)'] === id && a.parsedStartTime >= firstApptDate && a.parsedStartTime < threeMonthsAfter).length; });
                 const groupClasses = apptsThisWeek.filter(a => parseInt(a['Maximum Number of Patients'], 10) > 1);
@@ -742,10 +738,9 @@
         }
 
         function showPractitionerYearlyTrendChart(metricType, metricTitle) {
-            const selectedPractitionerId = document.getElementById('practitioner-select').value;
-            const selectedPractitionerName = document.getElementById('practitioner-select').options[document.getElementById('practitioner-select').selectedIndex].text;
+            const selectedPractitionerName = document.getElementById('practitioner-select').value;
             const selectedYear = parseInt(document.getElementById('year-select').value);
-            const yearlyData = calculatePractitionerYearlyMetrics(selectedPractitionerId, selectedPractitionerName, selectedYear);
+            const yearlyData = calculatePractitionerYearlyMetrics(null, selectedPractitionerName, selectedYear);
             renderChartInModal(metricType, metricTitle, selectedYear, yearlyData, '#BE185D', 'rgba(190, 24, 93, 0.2)');
         }
 
@@ -768,8 +763,16 @@
             const isPercent = metricType.toLowerCase().includes('rate') || metricType.toLowerCase().includes('percent') || metricType.toLowerCase().includes('completion');
 
             const datasets = [{ label: metricTitle, data: chartData, borderColor: color, backgroundColor: bgColor, fill: true, tension: 0.4 }];
+            
+            // Contextual benchmark check
+            const isClinicChart = color === '#0F766E';
+            let showBenchmark = true;
+            if (!isClinicChart && (metricType === 'totalBookedAppointments' || metricType === 'totalCompletedAppointments')) {
+                showBenchmark = false;
+            }
+            
             const benchmarkValue = METRIC_BENCHMARKS[metricType];
-            if(benchmarkValue !== undefined) {
+            if(benchmarkValue !== undefined && showBenchmark) {
                 datasets.push({ label: 'Benchmark', data: Array(weeksInYear).fill(benchmarkValue), borderColor: '#6B7280', borderWidth: 2, borderDash: [5, 5], pointRadius: 0, fill: false, tension: 0 });
             }
 
