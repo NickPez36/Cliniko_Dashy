@@ -172,6 +172,13 @@
                 <h2 id="modal-title" class="text-xl font-bold text-brand-text-dark"></h2>
                 <button id="modal-close-button" class="text-brand-text-light hover:text-brand-text-dark text-3xl leading-none">&times;</button>
             </div>
+            <div id="modal-summary" class="flex justify-around p-4 bg-brand-gray text-center border-b border-gray-200">
+                <div><p class="text-sm text-brand-text-light">Q1 Avg</p><p id="modal-q1-avg" class="text-xl font-bold text-brand-text-dark"></p></div>
+                <div><p class="text-sm text-brand-text-light">Q2 Avg</p><p id="modal-q2-avg" class="text-xl font-bold text-brand-text-dark"></p></div>
+                <div><p class="text-sm text-brand-text-light">Q3 Avg</p><p id="modal-q3-avg" class="text-xl font-bold text-brand-text-dark"></p></div>
+                <div><p class="text-sm text-brand-text-light">Q4 Avg</p><p id="modal-q4-avg" class="text-xl font-bold text-brand-text-dark"></p></div>
+                <div class="border-l border-gray-300 pl-4 ml-4"><p class="text-sm text-brand-text-light">Annual Avg</p><p id="modal-annual-avg" class="text-xl font-bold text-brand-text-dark"></p></div>
+            </div>
             <div class="p-4 flex-grow overflow-y-auto">
                 <canvas id="modal-chart"></canvas>
             </div>
@@ -660,7 +667,7 @@
         }
         
         // --- YEARLY TREND MODAL (Practitioner) ---
-        function calculatePractitionerYearlyMetrics(practitionerId, practitionerName, year) {
+        function calculatePractitionerYearlyMetrics(practitionerName, year) {
             const weeksInYear = 53; const yearlyMetrics = {}; const metricKeys = ['totalBookedAppointments', 'totalCompletedAppointments', 'weeklyBilledRevenue', 'cancellationRate', 'didNotAttendRate', 'newPatients', 'newPatientPercent', 'rebookingRate', 'avgRevenuePerAppointment', 'pvaCliniko', 'iarRate', 'pvaMatured3Mo', 'treatmentNoteCompletionRate', 'utilizationRate', 'totalClasses', 'totalGroupAttendance', 'totalGroupCancellations', 'totalGroupRevenue', 'groupRevenuePercent', 'classCancellationRate'];
             metricKeys.forEach(key => yearlyMetrics[key] = Array(weeksInYear).fill(0));
             const practitionerEventsThisYear = allEvents.filter(e => e['Practitioner'] === practitionerName && e.parsedStartTime.getUTCFullYear() === year);
@@ -723,9 +730,9 @@
                 const iar = newPatientIds.filter(id => allEvents.some(a => a['PatientID(s)'] === id && a.parsedStartTime >= weekEndDate)).length;
                 const notesCompleted = apptsThisWeek.filter(a => a['Treatment Notes Status'] === 'Final').length;
                 const cohortEndDate = new Date(weekStartDate); cohortEndDate.setUTCMonth(cohortEndDate.getUTCMonth() - 3); const cohortStartDate = new Date(cohortEndDate); cohortStartDate.setUTCMonth(cohortStartDate.getUTCMonth() - 3);
-                const cohort = Object.keys(globalPatientFirstAppointment).filter(id => { const first = globalPatientFirstAppointment[id]; return first >= cohortStartDate && first < cohortEndDate; });
+                const clinicCohort = Object.keys(globalPatientFirstAppointment).filter(id => { const first = globalPatientFirstAppointment[id]; return first >= cohortStartDate && first < cohortEndDate; });
                 let maturedAppts = 0;
-                cohort.forEach(id => { const first = globalPatientFirstAppointment[id]; const threeMonthsAfter = new Date(first); threeMonthsAfter.setUTCMonth(threeMonthsAfter.getUTCMonth() + 3); maturedAppts += allEvents.filter(a => a['PatientID(s)'] === id && a.parsedStartTime >= first && a.parsedStartTime < threeMonthsAfter).length; });
+                clinicCohort.forEach(id => { const first = globalPatientFirstAppointment[id]; const threeMonthsAfter = new Date(first); threeMonthsAfter.setUTCMonth(threeMonthsAfter.getUTCMonth() + 3); maturedAppts += allEvents.filter(a => a['PatientID(s)'] === id && a.parsedStartTime >= first && a.parsedStartTime < threeMonthsAfter).length; });
                 const groupClasses = apptsThisWeek.filter(a => parseInt(a['Maximum Number of Patients'], 10) > 1);
                 const groupCancellations = groupClasses.reduce((sum, cls) => sum + parseInt(cls['Number of Cancellations'] || 0), 0);
                 const groupAttendance = groupClasses.reduce((sum, cls) => sum + parseInt(cls['Number of Patients'] || 0), 0);
@@ -740,7 +747,7 @@
         function showPractitionerYearlyTrendChart(metricType, metricTitle) {
             const selectedPractitionerName = document.getElementById('practitioner-select').value;
             const selectedYear = parseInt(document.getElementById('year-select').value);
-            const yearlyData = calculatePractitionerYearlyMetrics(null, selectedPractitionerName, selectedYear);
+            const yearlyData = calculatePractitionerYearlyMetrics(selectedPractitionerName, selectedYear);
             renderChartInModal(metricType, metricTitle, selectedYear, yearlyData, '#BE185D', 'rgba(190, 24, 93, 0.2)');
         }
 
@@ -753,6 +760,12 @@
         function renderChartInModal(metricType, metricTitle, year, yearlyData, color, bgColor) {
             const modal = document.getElementById('chart-modal');
             const modalTitle = document.getElementById('modal-title');
+            const q1AvgEl = document.getElementById('modal-q1-avg');
+            const q2AvgEl = document.getElementById('modal-q2-avg');
+            const q3AvgEl = document.getElementById('modal-q3-avg');
+            const q4AvgEl = document.getElementById('modal-q4-avg');
+            const annualAvgEl = document.getElementById('modal-annual-avg');
+            
             modalTitle.textContent = `${metricTitle} Trend for ${year}`;
             
             const chartData = yearlyData[metricType];
@@ -761,6 +774,32 @@
             const weeksInYear = 53; const labels = Array.from({ length: weeksInYear }, (_, i) => `W${i + 1}`);
             const isCurrency = metricType.toLowerCase().includes('revenue');
             const isPercent = metricType.toLowerCase().includes('rate') || metricType.toLowerCase().includes('percent') || metricType.toLowerCase().includes('completion');
+
+            // Calculate Averages
+            const validValues = chartData.filter(v => v > 0);
+            const annualAvg = validValues.length > 0 ? validValues.reduce((a, b) => a + b, 0) / validValues.length : 0;
+            
+            const quarterlyAverages = [];
+            for (let i = 0; i < 4; i++) {
+                const quarterStartWeek = i * 13;
+                const quarterEndWeek = quarterStartWeek + 13;
+                const quarterValues = chartData.slice(quarterStartWeek, quarterEndWeek).filter(v => v > 0);
+                const avg = quarterValues.length > 0 ? quarterValues.reduce((a, b) => a + b, 0) / quarterValues.length : 0;
+                quarterlyAverages.push(avg);
+            }
+
+            const formatValue = (val) => {
+                 if (isCurrency) return formatCurrency(val);
+                 if (isPercent) return `${val.toFixed(1)}%`;
+                 return val.toFixed(1);
+            }
+            
+            q1AvgEl.textContent = formatValue(quarterlyAverages[0]);
+            q2AvgEl.textContent = formatValue(quarterlyAverages[1]);
+            q3AvgEl.textContent = formatValue(quarterlyAverages[2]);
+            q4AvgEl.textContent = formatValue(quarterlyAverages[3]);
+            annualAvgEl.textContent = formatValue(annualAvg);
+
 
             const datasets = [{ label: metricTitle, data: chartData, borderColor: color, backgroundColor: bgColor, fill: true, tension: 0.4 }];
             
