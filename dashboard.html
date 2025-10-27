@@ -76,6 +76,14 @@
         .week-nav-button:hover {
             background-color: #D1D5DB; /* gray-300 */
         }
+        /* NEW: Sticky filter bar */
+        #filter-bar {
+            position: sticky;
+            top: 0; /* Adjust this value if you have a fixed header above the filters */
+            z-index: 10;
+             /* Ensure background covers scrolling content */
+            background-color: #F3F4F6; /* brand-gray */
+        }
     </style>
 </head>
 <body class="bg-brand-white text-brand-text-dark">
@@ -101,8 +109,8 @@
 
         <!-- Main Dashboard Content (hidden initially) -->
         <div id="main-dashboard" class="hidden">
-            <!-- Filters -->
-            <div class="bg-brand-gray rounded-lg shadow-lg p-4 mb-8 grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+            <!-- Filters - ADDED ID and sticky class -->
+            <div id="filter-bar" class="bg-brand-gray rounded-lg shadow-lg p-4 mb-8 grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
                 <div id="practitioner-filter-container">
                     <label for="practitioner-select" class="block text-sm font-medium text-brand-text-dark mb-1">Practitioner</label>
                     <select id="practitioner-select" class="w-full bg-white border-gray-300 text-brand-text-dark rounded-md shadow-sm focus:ring-brand-dark-teal focus:border-brand-dark-teal"></select>
