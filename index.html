@@ -183,7 +183,7 @@
     </div>
 
     <script>
-        // --- GLOBAL VARIABLES ---
+        // --- GLOBAL VARIABLES & CONSTANTS ---
         let allEvents = [], invoicesData = [], modalChart;
         let practitionerLoadChart, utilizationBarChart, notesBarChart, rebookingBarChart, cancellationBarChart;
         let globalPatientFirstAppointment = {}, allPopulatedYears = [], allPopulatedWeeks = {}, practitionersList = [];
@@ -204,14 +204,7 @@
         const loginView = document.getElementById('login-view');
         const dashboardView = document.getElementById('dashboard-view');
 
-        // Init Identity
-        netlifyIdentity.init();
-
-        // CRITICAL FIX: Check for Invite/Recovery tokens in URL and force open
-        if (window.location.hash.includes("invite_token=") || window.location.hash.includes("recovery_token=")) {
-             netlifyIdentity.open();
-        }
-
+        // 1. Define Listeners FIRST
         netlifyIdentity.on('login', user => {
             netlifyIdentity.close();
             showDashboard(user);
@@ -221,10 +214,13 @@
             showLogin();
             window.location.reload();
         });
+        
+        // 2. Initialize Identity AFTER listeners are set
+        netlifyIdentity.init();
 
+        // 3. Check if user is already logged in
         const currentUser = netlifyIdentity.currentUser();
         if (currentUser) {
-            // If user is logged in, immediately start fetching data
             loadData(currentUser).then(success => {
                 if (success) showDashboard(currentUser);
             });
@@ -232,6 +228,7 @@
             showLogin();
         }
 
+        // --- VIEW CONTROLLER ---
         function showLogin() {
             loginView.classList.remove('view-hidden');
             dashboardView.classList.add('view-hidden');
@@ -279,7 +276,6 @@
         // --- DASHBOARD LOGIC ---
         function initDashboardLogic(user) {
             setupDashboardUI();
-            // Ensure data is loaded before populating
             loadData(user).then(success => {
                 if(success) {
                     applyUserPermissions(user); 
@@ -535,8 +531,8 @@
             return { totalBookedAppointments: booked, totalCompletedAppointments: comp, utilizationRate: clinicFixedMins>0 ? (attMins/clinicFixedMins)*100 : 0, cancellationRate: booked>0 ? (cancel/booked)*100 : 0, didNotAttendRate: booked>0 ? (dna/booked)*100 : 0, cancelledAppointments: cancel, didNotAttendCount: dna, newPatients: newPids.length, newPatientPercent: comp>0 ? (newPids.length/comp)*100 : 0, rebookingRate: sPats.size>0 ? (rSPats.size/sPats.size)*100 : 0, groupRebookingRate: gPats.size>0 ? (rGPats.size/gPats.size)*100 : 0, treatmentNoteCompletionRate: comp>0 ? (finalNotes/comp)*100 : 0, finalNotesCount: finalNotes, iarRate: newPids.length>0 ? (iar/newPids.length)*100 : 0, pvaCliniko: newPids.length>0 ? comp/newPids.length : 0, pvaMatured3Mo: cohort.length>0 ? cohortAppts/cohort.length : 0, totalClasses: groups.length, totalGroupAttendance: gAtt, totalGroupCancellations: gCanc, classCancellationRate: (gAtt+gCanc)>0 ? (gCanc/(gAtt+gCanc))*100 : 0, totalPotentialAttendance: gAtt+gCanc };
         }
 
-        function calculatePractitionerYearlyMetrics(name, year) { const weeksInYear = 53; const metrics = {}; const keys = ['totalBookedAppointments','totalCompletedAppointments','weeklyBilledRevenue','cancellationRate','didNotAttendRate','newPatients','newPatientPercent','rebookingRate','groupRebookingRate','avgRevenuePerAppointment','pvaCliniko','iarRate','pvaMatured3Mo','treatmentNoteCompletionRate','utilizationRate','totalClasses','totalGroupAttendance','totalGroupCancellations','totalGroupRevenue','groupRevenuePercent','classCancellationRate']; keys.forEach(k => metrics[k] = Array(weeksInYear).fill(null)); const now = new Date(); for (let w = 1; w <= weeksInYear; w++) { const start = getStartOfWeek(year, w); if (start > now) continue; const m = calculatePractitionerMetrics(name, year, w); if (m.totalBookedAppointments !== undefined) keys.forEach(k => metrics[k][w-1] = m[k]); } return metrics; }
-        function calculateClinicYearlyMetrics(year) { const weeksInYear = 53; const metrics = {}; const keys = ['totalBookedAppointments','totalCompletedAppointments','utilizationRate','cancellationRate','didNotAttendRate','newPatients','newPatientPercent','rebookingRate','groupRebookingRate','treatmentNoteCompletionRate','iarRate','pvaCliniko','pvaMatured3Mo','totalClasses','totalGroupAttendance','totalGroupCancellations','classCancellationRate']; keys.forEach(k => metrics[k] = Array(weeksInYear).fill(null)); const now = new Date(); for (let w = 1; w <= weeksInYear; w++) { const start = getStartOfWeek(year, w); if (start > now) continue; const m = calculateClinicMetrics(year, w); if (m.totalBookedAppointments !== undefined) keys.forEach(k => metrics[k][w-1] = m[k]); } return metrics; }
+        function _calculatePractitionerYearlyMetricsInternal(name, year) { const weeksInYear = 53; const metrics = {}; const keys = ['totalBookedAppointments','totalCompletedAppointments','weeklyBilledRevenue','cancellationRate','didNotAttendRate','newPatients','newPatientPercent','rebookingRate','groupRebookingRate','avgRevenuePerAppointment','pvaCliniko','iarRate','pvaMatured3Mo','treatmentNoteCompletionRate','utilizationRate','totalClasses','totalGroupAttendance','totalGroupCancellations','totalGroupRevenue','groupRevenuePercent','classCancellationRate']; keys.forEach(k => metrics[k] = Array(weeksInYear).fill(null)); const now = new Date(); for (let w = 1; w <= weeksInYear; w++) { const start = getStartOfWeek(year, w); if (start > now) continue; const m = calculatePractitionerMetrics(name, year, w); if (m.totalBookedAppointments !== undefined) keys.forEach(k => metrics[k][w-1] = m[k]); } return metrics; }
+        function _calculateClinicYearlyMetricsInternal(year) { const weeksInYear = 53; const metrics = {}; const keys = ['totalBookedAppointments','totalCompletedAppointments','utilizationRate','cancellationRate','didNotAttendRate','newPatients','newPatientPercent','rebookingRate','groupRebookingRate','treatmentNoteCompletionRate','iarRate','pvaCliniko','pvaMatured3Mo','totalClasses','totalGroupAttendance','totalGroupCancellations','classCancellationRate']; keys.forEach(k => metrics[k] = Array(weeksInYear).fill(null)); const now = new Date(); for (let w = 1; w <= weeksInYear; w++) { const start = getStartOfWeek(year, w); if (start > now) continue; const m = calculateClinicMetrics(year, w); if (m.totalBookedAppointments !== undefined) keys.forEach(k => metrics[k][w-1] = m[k]); } return metrics; }
     </script>
 </body>
 </html>
