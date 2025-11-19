@@ -45,12 +45,22 @@
 </head>
 <body class="bg-brand-gray h-screen flex flex-col overflow-hidden">
 
-    <!-- ================= LOADING OVERLAY (For Token Verification) ================= -->
-    <div id="token-loading-view" class="flex-grow flex items-center justify-center view-hidden absolute inset-0 z-50 bg-brand-gray">
-        <div class="text-center">
-            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-dark-teal mx-auto mb-4"></div>
-            <p class="text-xl font-semibold text-brand-text-dark">Verifying secure link...</p>
-            <p class="text-sm text-gray-500 mt-2">Please wait while we set up your account.</p>
+    <!-- ================= RECOVERY / INVITE VIEW ================= -->
+    <!-- Lower Z-index (10) ensures Netlify Widget (usually z-index 99) sits ON TOP -->
+    <div id="token-loading-view" class="flex-grow flex items-center justify-center view-hidden absolute inset-0 z-10 bg-brand-gray">
+        <div class="text-center p-8 bg-white rounded-xl shadow-lg max-w-md mx-4">
+            <div class="mb-4">
+                <svg class="mx-auto h-12 w-12 text-brand-dark-teal" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+            </div>
+            <h2 class="text-xl font-bold text-brand-text-dark mb-2">Setting up Account</h2>
+            <p class="text-gray-600 mb-6">Please check the popup window to create your password.</p>
+            
+            <!-- Fallback Button: If the widget doesn't auto-open, this saves the user -->
+            <button onclick="netlifyIdentity.open()" class="text-sm text-brand-dark-teal font-semibold hover:underline border border-brand-dark-teal px-4 py-2 rounded">
+                Popup didn't appear? Click here
+            </button>
         </div>
     </div>
 
@@ -172,6 +182,7 @@
         </div>
     </div>
 
+    <!-- Chart Modal -->
     <div id="chart-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 hidden z-50">
         <div class="bg-brand-white rounded-lg shadow-xl w-full max-w-4xl max-h-full flex flex-col">
             <div class="flex justify-between items-center p-4 border-b border-gray-200">
@@ -209,7 +220,7 @@
         const METRIC_BENCHMARKS = { totalBookedAppointments: 120, totalCompletedAppointments: 120, utilizationRate: 80, cancellationRate: 15, didNotAttendRate: 5, rebookingRate: 80, treatmentNoteCompletionRate: 90, iarRate: 95, pvaCliniko: 8, pvaMatured3Mo: 8, totalClasses: 5, totalGroupAttendance: 30, classCancellationRate: 15, groupRebookingRate: 60 };
         const METRIC_GOOD_DIRECTION = { totalBookedAppointments: 'up', totalCompletedAppointments: 'up', utilizationRate: 'up', weeklyBilledRevenue: 'up', cancellationRate: 'down', didNotAttendRate: 'down', newPatientPercent: 'up', rebookingRate: 'up', avgRevenuePerAppointment: 'up', treatmentNoteCompletionRate: 'up', newPatients: 'up', iarRate: 'up', pvaCliniko: 'up', pvaMatured3Mo: 'up', totalClasses: 'up', totalGroupAttendance: 'up', groupRebookingRate: 'up', totalGroupCancellations: 'down', classCancellationRate: 'down', totalGroupRevenue: 'up', groupRevenuePercent: 'up' };
 
-        // --- NETLIFY IDENTITY LOGIC (Reordered for Fix) ---
+        // --- NETLIFY IDENTITY CONFIG ---
         const loginView = document.getElementById('login-view');
         const dashboardView = document.getElementById('dashboard-view');
         const tokenLoadingView = document.getElementById('token-loading-view');
@@ -230,21 +241,18 @@
         });
         
         // 3. Initialize Widget
-        // This call will strip the hash if it finds a token!
         netlifyIdentity.init();
 
         // 4. Decide what to show based on the *original* hash state
         if (isRecoveryFlow) {
             // STATE: RECOVERY / INVITE
-            // Do NOT show login. Do NOT show dashboard.
-            // Show a neutral loading screen.
+            // Show the "Setting up Account" screen (Z-index 10)
             tokenLoadingView.classList.remove('view-hidden');
             loginView.classList.add('view-hidden');
             
-            // Give the widget 1 second to auto-open, otherwise force it.
-            setTimeout(() => {
-                 netlifyIdentity.open(); 
-            }, 1000);
+            // Note: We do NOT force netlifyIdentity.open() automatically here.
+            // We trust init() to detect the hash.
+            // If it fails, the user has the "Popup didn't appear?" button.
         } else {
             // STATE: NORMAL VISIT
             const currentUser = netlifyIdentity.currentUser();
@@ -259,7 +267,7 @@
 
         // --- VIEW CONTROLLER ---
         function showLogin() {
-            if (!isRecoveryFlow) { // Extra guard
+            if (!isRecoveryFlow) { 
                 loginView.classList.remove('view-hidden');
                 dashboardView.classList.add('view-hidden');
                 tokenLoadingView.classList.add('view-hidden');
