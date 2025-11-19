@@ -45,25 +45,6 @@
 </head>
 <body class="bg-brand-gray h-screen flex flex-col overflow-hidden">
 
-    <!-- ================= RECOVERY / INVITE VIEW ================= -->
-    <!-- Lower Z-index (10) ensures Netlify Widget (usually z-index 99) sits ON TOP -->
-    <div id="token-loading-view" class="flex-grow flex items-center justify-center view-hidden absolute inset-0 z-10 bg-brand-gray">
-        <div class="text-center p-8 bg-white rounded-xl shadow-lg max-w-md mx-4">
-            <div class="mb-4">
-                <svg class="mx-auto h-12 w-12 text-brand-dark-teal" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-            </div>
-            <h2 class="text-xl font-bold text-brand-text-dark mb-2">Setting up Account</h2>
-            <p class="text-gray-600 mb-6">Please check the popup window to create your password.</p>
-            
-            <!-- Fallback Button: If the widget doesn't auto-open, this saves the user -->
-            <button onclick="netlifyIdentity.open()" class="text-sm text-brand-dark-teal font-semibold hover:underline border border-brand-dark-teal px-4 py-2 rounded">
-                Popup didn't appear? Click here
-            </button>
-        </div>
-    </div>
-
     <!-- ================= LOGIN VIEW ================= -->
     <div id="login-view" class="flex-grow flex items-center justify-center view-hidden">
         <div class="w-full max-w-md p-8 space-y-8 bg-brand-white rounded-2xl shadow-lg text-center m-4">
@@ -74,7 +55,7 @@
             </div>
             
             <div class="mt-8 space-y-6">
-                <p class="text-sm text-gray-600">Please log in securely to access metrics.</p>
+                <p class="text-sm text-gray-600">Secure Access Portal</p>
                 <button onclick="netlifyIdentity.open()" class="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-brand-dark-teal hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-dark-teal transition-colors">
                     Log In / Sign Up
                 </button>
@@ -182,7 +163,6 @@
         </div>
     </div>
 
-    <!-- Chart Modal -->
     <div id="chart-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 hidden z-50">
         <div class="bg-brand-white rounded-lg shadow-xl w-full max-w-4xl max-h-full flex flex-col">
             <div class="flex justify-between items-center p-4 border-b border-gray-200">
@@ -203,7 +183,7 @@
     </div>
 
     <script>
-        // --- GLOBAL VARIABLES ---
+        // --- GLOBAL VARIABLES & CONSTANTS ---
         let allEvents = [], invoicesData = [], modalChart;
         let practitionerLoadChart, utilizationBarChart, notesBarChart, rebookingBarChart, cancellationBarChart;
         let globalPatientFirstAppointment = {}, allPopulatedYears = [], allPopulatedWeeks = {}, practitionersList = [];
@@ -220,16 +200,14 @@
         const METRIC_BENCHMARKS = { totalBookedAppointments: 120, totalCompletedAppointments: 120, utilizationRate: 80, cancellationRate: 15, didNotAttendRate: 5, rebookingRate: 80, treatmentNoteCompletionRate: 90, iarRate: 95, pvaCliniko: 8, pvaMatured3Mo: 8, totalClasses: 5, totalGroupAttendance: 30, classCancellationRate: 15, groupRebookingRate: 60 };
         const METRIC_GOOD_DIRECTION = { totalBookedAppointments: 'up', totalCompletedAppointments: 'up', utilizationRate: 'up', weeklyBilledRevenue: 'up', cancellationRate: 'down', didNotAttendRate: 'down', newPatientPercent: 'up', rebookingRate: 'up', avgRevenuePerAppointment: 'up', treatmentNoteCompletionRate: 'up', newPatients: 'up', iarRate: 'up', pvaCliniko: 'up', pvaMatured3Mo: 'up', totalClasses: 'up', totalGroupAttendance: 'up', groupRebookingRate: 'up', totalGroupCancellations: 'down', classCancellationRate: 'down', totalGroupRevenue: 'up', groupRevenuePercent: 'up' };
 
-        // --- NETLIFY IDENTITY CONFIG ---
+        // --- NETLIFY IDENTITY CONFIG (SIMPLIFIED) ---
         const loginView = document.getElementById('login-view');
         const dashboardView = document.getElementById('dashboard-view');
-        const tokenLoadingView = document.getElementById('token-loading-view');
 
-        // 1. CRITICAL: Check for Token *Before* anything else
-        const hash = window.location.hash;
-        const isRecoveryFlow = hash.includes("invite_token=") || hash.includes("recovery_token=");
+        // 1. Initialize FIRST
+        netlifyIdentity.init();
 
-        // 2. Define Listeners
+        // 2. Event Listeners
         netlifyIdentity.on('login', user => {
             netlifyIdentity.close();
             showDashboard(user);
@@ -239,44 +217,38 @@
             showLogin();
             window.location.reload();
         });
-        
-        // 3. Initialize Widget
-        netlifyIdentity.init();
 
-        // 4. Decide what to show based on the *original* hash state
-        if (isRecoveryFlow) {
-            // STATE: RECOVERY / INVITE
-            // Show the "Setting up Account" screen (Z-index 10)
-            tokenLoadingView.classList.remove('view-hidden');
-            loginView.classList.add('view-hidden');
-            
-            // Note: We do NOT force netlifyIdentity.open() automatically here.
-            // We trust init() to detect the hash.
-            // If it fails, the user has the "Popup didn't appear?" button.
+        // 3. State Logic (Traffic Cop)
+        // We explicitly capture the hash here to check for tokens
+        const hash = window.location.hash;
+        const isTokenPresent = hash.includes("_token=");
+
+        const user = netlifyIdentity.currentUser();
+
+        if (user) {
+            // If user is already valid logged in, just go.
+            showDashboard(user);
         } else {
-            // STATE: NORMAL VISIT
-            const currentUser = netlifyIdentity.currentUser();
-            if (currentUser) {
-                loadData(currentUser).then(success => {
-                    if (success) showDashboard(currentUser);
-                });
-            } else {
-                showLogin();
+            // If no user, ALWAYS show the login screen so they aren't stuck.
+            showLogin();
+            
+            // BUT, if we detect a token, attempt to open the modal automatically on top.
+            if (isTokenPresent) {
+                // Small delay to ensure widget is ready to catch the event
+                setTimeout(() => {
+                    netlifyIdentity.open();
+                }, 500);
             }
         }
 
         // --- VIEW CONTROLLER ---
         function showLogin() {
-            if (!isRecoveryFlow) { 
-                loginView.classList.remove('view-hidden');
-                dashboardView.classList.add('view-hidden');
-                tokenLoadingView.classList.add('view-hidden');
-            }
+            loginView.classList.remove('view-hidden');
+            dashboardView.classList.add('view-hidden');
         }
 
         function showDashboard(user) {
             loginView.classList.add('view-hidden');
-            tokenLoadingView.classList.add('view-hidden');
             dashboardView.classList.remove('view-hidden');
             document.getElementById('user-display-name').textContent = user.user_metadata.full_name || user.email;
             initDashboardLogic(user);
@@ -326,7 +298,7 @@
                 }
             });
         }
-        // ... (Rest of dashboard logic matches previous version) ...
+
         function setupDashboardUI() {
             const pt = document.getElementById('practitioner-tab'), ct = document.getElementById('clinic-tab'), pc = document.getElementById('practitioner-dashboard-content'), cc = document.getElementById('clinic-dashboard-content'), pf = document.getElementById('practitioner-filter-container');
             pt.addEventListener('click', () => { pt.classList.add('active-tab'); ct.classList.remove('active-tab'); pc.classList.remove('hidden'); cc.classList.add('hidden'); pf.classList.remove('hidden'); });
@@ -507,7 +479,6 @@
             if (cancellationBarChart) cancellationBarChart.destroy(); cancellationBarChart = new Chart(document.getElementById('cancellationBarChart'), { type: 'bar', data: { labels: lbls, datasets: [{ label: 'Cancellation', data: cD.map(d => d.canc), backgroundColor: '#BE185D' }] }, options: opts });
         }
 
-        // Re-using logic functions from before
         function calculateQuickMetrics(name, start, end, year) { const startStr = start.toISOString().split('T')[0]; const appts = allEvents.filter(e => e.practitionerName === name && e.parsedStartTime >= start && e.parsedStartTime < end && parseInt(e['Maximum Number of Patients']) > 0); const totalBooked = appts.length; if (totalBooked === 0) return { comp:0, util:0, note:0, reb:0, canc:0 }; const fixedHrs = getPractitionerHoursForDate(name, startStr); const attended = appts.filter(a => parseInt(a['Number of Patients']) > 0); const attMins = attended.reduce((t, a) => t + (a.parsedEndTime - a.parsedStartTime)/60000, 0); const util = (fixedHrs * 60) > 0 ? (attMins / (fixedHrs * 60)) * 100 : 0; const cancel = appts.filter(a => a['Cancellation Time'] && a['Cancellation Time'].trim() !== '' && a['Cancellation Time'].toLowerCase() !== 'n/a').length; const dna = appts.filter(a => a['Did Not Arrive']?.trim().toLowerCase() === 'true').length; const comp = totalBooked - cancel - dna; const finalNotes = appts.filter(a => a['Treatment Notes Status'] === 'Final').length; const sPats = new Set(), rSPats = new Set(); attended.forEach(a => { if (!a.isGroupClass) { const nextDay = new Date(a.parsedStartTime); nextDay.setUTCDate(nextDay.getUTCDate() + 1); a.patientIds.forEach(p => { if(p){ sPats.add(p); if(!rSPats.has(p) && allEvents.some(f => f.patientIds.includes(p) && f.parsedStartTime >= nextDay && f.practitionerName === name)) rSPats.add(p); } }); } }); return { comp: comp, util: util, note: comp > 0 ? (finalNotes/comp)*100 : 0, reb: sPats.size > 0 ? (rSPats.size/sPats.size)*100 : 0, canc: totalBooked > 0 ? (cancel/totalBooked)*100 : 0 }; }
         
         function calculatePractitionerMetrics(name, year, week) {
