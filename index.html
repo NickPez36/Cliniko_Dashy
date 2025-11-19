@@ -40,13 +40,16 @@
         .week-nav-button { background-color: #E5E7EB; color: #1F2937; border: none; border-radius: 0.375rem; padding: 0.5rem 0.75rem; font-weight: 600; cursor: pointer; transition: background-color 0.2s ease; }
         .week-nav-button:hover { background-color: #D1D5DB; }
         #filter-bar { position: sticky; top: 0; z-index: 10; background-color: #F3F4F6; }
+        
+        /* Utility to hide views - used by JS */
         .view-hidden { display: none !important; }
     </style>
 </head>
 <body class="bg-brand-gray h-screen flex flex-col overflow-hidden">
 
     <!-- ================= LOGIN VIEW ================= -->
-    <div id="login-view" class="flex-grow flex items-center justify-center view-hidden">
+    <!-- NOTE: Removed 'view-hidden' from here. It is visible by default. -->
+    <div id="login-view" class="flex-grow flex items-center justify-center">
         <div class="w-full max-w-md p-8 space-y-8 bg-brand-white rounded-2xl shadow-lg text-center m-4">
             <div>
                 <img src="https://raw.githubusercontent.com/NickPez36/Cliniko_Dashy/main/assets/logo.webp" alt="Clinic Logo" class="h-48 w-48 mx-auto mb-6" onerror="this.onerror=null; this.src='https://placehold.co/192x192/0F766E/FFFFFF?text=Logo';">
@@ -55,7 +58,8 @@
             </div>
             
             <div class="mt-8 space-y-6">
-                <p class="text-sm text-gray-600">Secure Access Portal</p>
+                <p class="text-sm text-gray-600">Please log in securely to access metrics.</p>
+                <!-- Clicking this opens the widget manually if it doesn't auto-open -->
                 <button onclick="netlifyIdentity.open()" class="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-brand-dark-teal hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-dark-teal transition-colors">
                     Log In / Sign Up
                 </button>
@@ -183,13 +187,23 @@
     </div>
 
     <script>
-// --- GLOBAL VARIABLES ---
+    // =========================================================================
+    // SAFETY WRAPPER: Wait for the page to be ready before running ANY script
+    // =========================================================================
+    document.addEventListener('DOMContentLoaded', function() {
+        
+        // --- APP ELEMENTS ---
+        const loginView = document.getElementById('login-view');
+        const dashboardView = document.getElementById('dashboard-view');
+        const initialLoading = document.getElementById('initial-loading');
+        const mainDashboardContent = document.getElementById('main-dashboard-content');
+
+        // --- GLOBAL VARIABLES ---
         let allEvents = [], invoicesData = [], modalChart;
         let practitionerLoadChart, utilizationBarChart, notesBarChart, rebookingBarChart, cancellationBarChart;
         let globalPatientFirstAppointment = {}, allPopulatedYears = [], allPopulatedWeeks = {}, practitionersList = [];
-        let dataLoadingPromise = null; 
+        let dataLoadingPromise = null;
 
-        // --- CONSTANTS ---
         const PRACTITIONER_HOURS_HISTORY = {
             'Isabella Coluccio': [{ startDate: '2000-01-01', endDate: '9999-12-31', hours: 33 }],
             'Kate Deaves': [{ startDate: '2000-01-01', endDate: '9999-12-31', hours: 27 }],
@@ -197,85 +211,52 @@
             'Caitlin Wright': [{ startDate: '2000-01-01', endDate: '9999-12-31', hours: 32 }],
             'Arron Huynh': [{ startDate: '2000-01-01', endDate: '9999-12-31', hours: 14 }]
         };
-        
+
         const METRIC_BENCHMARKS = { totalBookedAppointments: 120, totalCompletedAppointments: 120, utilizationRate: 80, cancellationRate: 15, didNotAttendRate: 5, rebookingRate: 80, treatmentNoteCompletionRate: 90, iarRate: 95, pvaCliniko: 8, pvaMatured3Mo: 8, totalClasses: 5, totalGroupAttendance: 30, classCancellationRate: 15, groupRebookingRate: 60 };
         const METRIC_GOOD_DIRECTION = { totalBookedAppointments: 'up', totalCompletedAppointments: 'up', utilizationRate: 'up', weeklyBilledRevenue: 'up', cancellationRate: 'down', didNotAttendRate: 'down', newPatientPercent: 'up', rebookingRate: 'up', avgRevenuePerAppointment: 'up', treatmentNoteCompletionRate: 'up', newPatients: 'up', iarRate: 'up', pvaCliniko: 'up', pvaMatured3Mo: 'up', totalClasses: 'up', totalGroupAttendance: 'up', groupRebookingRate: 'up', totalGroupCancellations: 'down', classCancellationRate: 'down', totalGroupRevenue: 'up', groupRevenuePercent: 'up' };
 
-        // --- APP CONTROLLER (The Fix) ---
-        const loginView = document.getElementById('login-view');
-        const dashboardView = document.getElementById('dashboard-view');
-        const tokenLoadingView = document.getElementById('token-loading-view');
-        const initialLoading = document.getElementById('initial-loading');
+        // --- NETLIFY IDENTITY INITIALIZATION ---
+        // 1. Initialize the widget (this detects tokens automatically)
+        netlifyIdentity.init();
 
-        // 1. Define Event Listeners
-        netlifyIdentity.on('init', user => {
-            console.log('Netlify Identity Initialized', user);
-            // This runs ONLY after the widget has checked the URL for tokens.
-            // If a token was found, the widget is ALREADY handling it (opening popup).
-            // We just need to decide what to show in the background.
-            
-            if (!user) {
-                // No user logged in. 
-                // Are we in a recovery flow? (Widget handles popup, we handle background)
-                // We check if the widget is open. If yes, keep background neutral.
-                // Note: We can't easily check if widget is open via API, so we assume:
-                // If no user, show Login.
-                console.log('No user found. Showing Login.');
-                showLogin();
-            } else {
-                // User found! Go to Dashboard.
-                console.log('User found. Going to Dashboard.');
-                showDashboard(user);
-            }
-        });
+        // 2. Check if user is already logged in
+        const user = netlifyIdentity.currentUser();
 
+        if (user) {
+            // If user exists, hide login and show dashboard
+            showDashboard(user);
+        } else {
+            // If no user, Login View is ALREADY VISIBLE by default (CSS).
+            // We don't need to do anything.
+        }
+
+        // 3. Event Listeners
         netlifyIdentity.on('login', user => {
-            console.log('User Logged In');
             netlifyIdentity.close();
             showDashboard(user);
         });
 
         netlifyIdentity.on('logout', () => {
-            console.log('User Logged Out');
+            // Simple reload clears state
             window.location.reload();
         });
 
-        // 2. Initialize (Triggers the logic above)
-        // We rely on the 'init' event to drive the UI. 
-        // We do NOT run any UI logic outside of that event.
-        netlifyIdentity.init();
-
         // --- VIEW FUNCTIONS ---
-        function showLogin() {
-            // Hide everything, show Login
-            tokenLoadingView.classList.add('view-hidden');
-            dashboardView.classList.add('view-hidden');
-            loginView.classList.remove('view-hidden');
-        }
-
         function showDashboard(user) {
-            // Hide everything, show Dashboard
-            tokenLoadingView.classList.add('view-hidden');
             loginView.classList.add('view-hidden');
             dashboardView.classList.remove('view-hidden');
-            
             document.getElementById('user-display-name').textContent = user.user_metadata.full_name || user.email;
-            
-            // Trigger Data Load
             initDashboardLogic(user);
         }
 
-        function handleLogout() {
+        window.handleLogout = function() {
             netlifyIdentity.logout();
         }
 
         // --- DATA LOADING ---
         function loadData(user) {
             if (dataLoadingPromise) return dataLoadingPromise;
-
             const token = user.token.access_token;
-            
-            // Helper to fetch with Auth header
             const fetchWithAuth = (type) => {
                 return fetch(`/.netlify/functions/get_clinic_data?type=${type}`, {
                     headers: { 'Authorization': `Bearer ${token}` }
@@ -284,13 +265,8 @@
                     return r.json();
                 });
             };
-
-            dataLoadingPromise = Promise.all([
-                fetchWithAuth('appointments'),
-                fetchWithAuth('invoices')
-            ]).then(([aJ, iJ]) => {
-                processData(aJ, iJ);
-                return true;
+            dataLoadingPromise = Promise.all([ fetchWithAuth('appointments'), fetchWithAuth('invoices') ]).then(([aJ, iJ]) => {
+                processData(aJ, iJ); return true;
             }).catch(e => {
                 console.error("Data load error:", e);
                 initialLoading.innerHTML = `<p class="text-red-500">Error loading secure data: ${e.message}</p>`;
@@ -307,16 +283,11 @@
                     applyUserPermissions(user); 
                     populateYears();
                     initialLoading.style.display = 'none';
-                    document.getElementById('main-dashboard-content').classList.remove('hidden');
+                    mainDashboardContent.classList.remove('hidden');
                 }
             });
         }
 
-        // ... [PASTE ALL THE UTILITY, SETUP, AND CALCULATION FUNCTIONS FROM THE PREVIOUS FILE HERE] ...
-        // (setupDashboardUI, processData, applyUserPermissions, populateYears, populateWeeks, navigateWeek, handleCardClick, getPractitionerHoursForDate, getTrendIndicator, formatCurrency, formatPatientId, robustDateParser, getWeekNumber, getStartOfWeek, updateDashboard, calculateQuickMetrics, calculatePractitionerMetrics, calculateClinicMetrics, showPractitionerYearlyTrendChart, showClinicYearlyTrendChart, calculatePractitionerYearlyMetrics, calculateClinicYearlyMetrics, renderChartInModal, _calculatePractitionerMetricsInternal, _calculateClinicMetricsInternal, _calculatePractitionerYearlyMetricsInternal, _calculateClinicYearlyMetricsInternal)
-        
-        // IMPORTANT: I am including the full set of functions below to ensure copy-paste works.
-        
         function setupDashboardUI() {
             const pt = document.getElementById('practitioner-tab'), ct = document.getElementById('clinic-tab'), pc = document.getElementById('practitioner-dashboard-content'), cc = document.getElementById('clinic-dashboard-content'), pf = document.getElementById('practitioner-filter-container');
             pt.addEventListener('click', () => { pt.classList.add('active-tab'); ct.classList.remove('active-tab'); pc.classList.remove('hidden'); cc.classList.add('hidden'); pf.classList.remove('hidden'); });
@@ -440,6 +411,7 @@
             const pName = document.getElementById('practitioner-select').value, year = parseInt(document.getElementById('year-select').value), week = parseInt(document.getElementById('week-select').value);
             if (!year || !week) return;
             let py = year, pw = week - 1; if (pw < 1) { py = year - 1; const w = allPopulatedWeeks[py]; pw = w ? w[w.length - 1] : 52; }
+            
             const renderCard = (m, type, trend) => {
                 let bg, tc, vc, sc, svg='', tHTML='';
                 if (type === 'summary') { bg='bg-brand-light-green'; tc='text-brand-dark-pink'; vc='text-brand-dark-pink'; sc='text-pink-900 opacity-70'; }
@@ -560,6 +532,7 @@
 
         function _calculatePractitionerYearlyMetricsInternal(name, year) { const weeksInYear = 53; const metrics = {}; const keys = ['totalBookedAppointments','totalCompletedAppointments','weeklyBilledRevenue','cancellationRate','didNotAttendRate','newPatients','newPatientPercent','rebookingRate','groupRebookingRate','avgRevenuePerAppointment','pvaCliniko','iarRate','pvaMatured3Mo','treatmentNoteCompletionRate','utilizationRate','totalClasses','totalGroupAttendance','totalGroupCancellations','totalGroupRevenue','groupRevenuePercent','classCancellationRate']; keys.forEach(k => metrics[k] = Array(weeksInYear).fill(null)); const now = new Date(); for (let w = 1; w <= weeksInYear; w++) { const start = getStartOfWeek(year, w); if (start > now) continue; const m = calculatePractitionerMetrics(name, year, w); if (m.totalBookedAppointments !== undefined) keys.forEach(k => metrics[k][w-1] = m[k]); } return metrics; }
         function _calculateClinicYearlyMetricsInternal(year) { const weeksInYear = 53; const metrics = {}; const keys = ['totalBookedAppointments','totalCompletedAppointments','utilizationRate','cancellationRate','didNotAttendRate','newPatients','newPatientPercent','rebookingRate','groupRebookingRate','treatmentNoteCompletionRate','iarRate','pvaCliniko','pvaMatured3Mo','totalClasses','totalGroupAttendance','totalGroupCancellations','classCancellationRate']; keys.forEach(k => metrics[k] = Array(weeksInYear).fill(null)); const now = new Date(); for (let w = 1; w <= weeksInYear; w++) { const start = getStartOfWeek(year, w); if (start > now) continue; const m = calculateClinicMetrics(year, w); if (m.totalBookedAppointments !== undefined) keys.forEach(k => metrics[k][w-1] = m[k]); } return metrics; }
+    });
     </script>
 </body>
 </html>
