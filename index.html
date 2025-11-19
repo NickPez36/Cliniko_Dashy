@@ -45,7 +45,7 @@
 </head>
 <body class="bg-brand-gray h-screen flex flex-col overflow-hidden">
 
-    <!-- ================= LOGIN VIEW (Netlify Identity) ================= -->
+    <!-- ================= LOGIN VIEW ================= -->
     <div id="login-view" class="flex-grow flex items-center justify-center">
         <div class="w-full max-w-md p-8 space-y-8 bg-brand-white rounded-2xl shadow-lg text-center m-4">
             <div>
@@ -56,7 +56,6 @@
             
             <div class="mt-8 space-y-6">
                 <p class="text-sm text-gray-600">Please log in securely to access metrics.</p>
-                <!-- Triggers Netlify Identity Modal -->
                 <button onclick="netlifyIdentity.open()" class="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-brand-dark-teal hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-dark-teal transition-colors">
                     Log In / Sign Up
                 </button>
@@ -164,7 +163,6 @@
         </div>
     </div>
 
-    <!-- Chart Modal -->
     <div id="chart-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 hidden z-50">
         <div class="bg-brand-white rounded-lg shadow-xl w-full max-w-4xl max-h-full flex flex-col">
             <div class="flex justify-between items-center p-4 border-b border-gray-200">
@@ -185,28 +183,51 @@
     </div>
 
     <script>
+        // --- GLOBAL VARIABLES ---
+        let allEvents = [], invoicesData = [], modalChart;
+        let practitionerLoadChart, utilizationBarChart, notesBarChart, rebookingBarChart, cancellationBarChart;
+        let globalPatientFirstAppointment = {}, allPopulatedYears = [], allPopulatedWeeks = {}, practitionersList = [];
+        let dataLoadingPromise = null; 
+
+        const PRACTITIONER_HOURS_HISTORY = {
+            'Isabella Coluccio': [{ startDate: '2000-01-01', endDate: '9999-12-31', hours: 33 }],
+            'Kate Deaves': [{ startDate: '2000-01-01', endDate: '9999-12-31', hours: 27 }],
+            'Andrew Lovell': [{ startDate: '2000-01-01', endDate: '9999-12-31', hours: 32 }],
+            'Caitlin Wright': [{ startDate: '2000-01-01', endDate: '9999-12-31', hours: 32 }],
+            'Arron Huynh': [{ startDate: '2000-01-01', endDate: '9999-12-31', hours: 14 }]
+        };
+
+        const METRIC_BENCHMARKS = { totalBookedAppointments: 120, totalCompletedAppointments: 120, utilizationRate: 80, cancellationRate: 15, didNotAttendRate: 5, rebookingRate: 80, treatmentNoteCompletionRate: 90, iarRate: 95, pvaCliniko: 8, pvaMatured3Mo: 8, totalClasses: 5, totalGroupAttendance: 30, classCancellationRate: 15, groupRebookingRate: 60 };
+        const METRIC_GOOD_DIRECTION = { totalBookedAppointments: 'up', totalCompletedAppointments: 'up', utilizationRate: 'up', weeklyBilledRevenue: 'up', cancellationRate: 'down', didNotAttendRate: 'down', newPatientPercent: 'up', rebookingRate: 'up', avgRevenuePerAppointment: 'up', treatmentNoteCompletionRate: 'up', newPatients: 'up', iarRate: 'up', pvaCliniko: 'up', pvaMatured3Mo: 'up', totalClasses: 'up', totalGroupAttendance: 'up', groupRebookingRate: 'up', totalGroupCancellations: 'down', classCancellationRate: 'down', totalGroupRevenue: 'up', groupRevenuePercent: 'up' };
+
         // --- NETLIFY IDENTITY CONFIG ---
-        // This handles the auth flow automatically
         const loginView = document.getElementById('login-view');
         const dashboardView = document.getElementById('dashboard-view');
 
-        // Netlify Identity Event Listeners
+        // Init Identity
+        netlifyIdentity.init();
+
+        // CRITICAL FIX: Check for Invite/Recovery tokens in URL and force open
+        if (window.location.hash.includes("invite_token=") || window.location.hash.includes("recovery_token=")) {
+             netlifyIdentity.open();
+        }
+
         netlifyIdentity.on('login', user => {
-            netlifyIdentity.close(); // Close modal
+            netlifyIdentity.close();
             showDashboard(user);
         });
 
         netlifyIdentity.on('logout', () => {
             showLogin();
-            window.location.reload(); // Reload to clear data from memory
+            window.location.reload();
         });
-
-        // Init
-        netlifyIdentity.init();
 
         const currentUser = netlifyIdentity.currentUser();
         if (currentUser) {
-            showDashboard(currentUser);
+            // If user is logged in, immediately start fetching data
+            loadData(currentUser).then(success => {
+                if (success) showDashboard(currentUser);
+            });
         } else {
             showLogin();
         }
@@ -227,16 +248,11 @@
             netlifyIdentity.logout();
         }
 
-        // --- DATA LOADING (Updated to use Netlify Function) ---
-        let dataLoadingPromise = null;
-
+        // --- DATA LOADING ---
         function loadData(user) {
             if (dataLoadingPromise) return dataLoadingPromise;
 
-            // We must pass the auth token so the function knows we are allowed access
             const token = user.token.access_token;
-            
-            // Helper to fetch with Auth header
             const fetchWithAuth = (type) => {
                 return fetch(`/.netlify/functions/get_clinic_data?type=${type}`, {
                     headers: { 'Authorization': `Bearer ${token}` }
@@ -259,25 +275,11 @@
             });
             return dataLoadingPromise;
         }
-        
-        // --- DASHBOARD LOGIC (Standard) ---
-        let allEvents = [], invoicesData = [], modalChart;
-        let practitionerLoadChart, utilizationBarChart, notesBarChart, rebookingBarChart, cancellationBarChart;
-        let globalPatientFirstAppointment = {}, allPopulatedYears = [], allPopulatedWeeks = {}, practitionersList = [];
 
-        const PRACTITIONER_HOURS_HISTORY = {
-            'Isabella Coluccio': [{ startDate: '2000-01-01', endDate: '9999-12-31', hours: 33 }],
-            'Kate Deaves': [{ startDate: '2000-01-01', endDate: '9999-12-31', hours: 27 }],
-            'Andrew Lovell': [{ startDate: '2000-01-01', endDate: '9999-12-31', hours: 32 }],
-            'Caitlin Wright': [{ startDate: '2000-01-01', endDate: '9999-12-31', hours: 32 }],
-            'Arron Huynh': [{ startDate: '2000-01-01', endDate: '9999-12-31', hours: 14 }]
-        };
-
-        const METRIC_BENCHMARKS = { totalBookedAppointments: 120, totalCompletedAppointments: 120, utilizationRate: 80, cancellationRate: 15, didNotAttendRate: 5, rebookingRate: 80, treatmentNoteCompletionRate: 90, iarRate: 95, pvaCliniko: 8, pvaMatured3Mo: 8, totalClasses: 5, totalGroupAttendance: 30, classCancellationRate: 15, groupRebookingRate: 60 };
-        const METRIC_GOOD_DIRECTION = { totalBookedAppointments: 'up', totalCompletedAppointments: 'up', utilizationRate: 'up', weeklyBilledRevenue: 'up', cancellationRate: 'down', didNotAttendRate: 'down', newPatientPercent: 'up', rebookingRate: 'up', avgRevenuePerAppointment: 'up', treatmentNoteCompletionRate: 'up', newPatients: 'up', iarRate: 'up', pvaCliniko: 'up', pvaMatured3Mo: 'up', totalClasses: 'up', totalGroupAttendance: 'up', groupRebookingRate: 'up', totalGroupCancellations: 'down', classCancellationRate: 'down', totalGroupRevenue: 'up', groupRevenuePercent: 'up' };
-
+        // --- DASHBOARD LOGIC ---
         function initDashboardLogic(user) {
             setupDashboardUI();
+            // Ensure data is loaded before populating
             loadData(user).then(success => {
                 if(success) {
                     applyUserPermissions(user); 
@@ -287,9 +289,6 @@
                 }
             });
         }
-
-        // ... (The rest of the UI setup and logic functions remain the same as previous working version) ...
-        // ... (I will include the full functions below to ensure the file is complete) ...
 
         function setupDashboardUI() {
             const pt = document.getElementById('practitioner-tab'), ct = document.getElementById('clinic-tab'), pc = document.getElementById('practitioner-dashboard-content'), cc = document.getElementById('clinic-dashboard-content'), pf = document.getElementById('practitioner-filter-container');
@@ -323,24 +322,14 @@
         function applyUserPermissions(user) {
             const ps = document.getElementById('practitioner-select'); ps.innerHTML = '';
             practitionersList.forEach(n => ps.add(new Option(n, n)));
-            
-            // ROLE CHECK: We now check Netlify Identity Roles
             const roles = user.app_metadata.roles || [];
             const isAdmin = roles.includes('admin');
 
             if (!isAdmin) {
-                // Assume they are a practitioner. We try to match their Name from metadata
                 const userName = user.user_metadata.full_name;
-                // Try exact match first, then fuzzy
                 const match = practitionersList.find(p => p.toLowerCase() === userName.toLowerCase());
-                
-                if (match) {
-                    ps.value = match;
-                } else {
-                    // Fallback: Add their name manually if no historical data
-                    ps.add(new Option(userName, userName));
-                    ps.value = userName;
-                }
+                if (match) ps.value = match; 
+                else { ps.add(new Option(userName, userName)); ps.value = userName; }
                 ps.disabled = true;
             } else {
                 ps.disabled = false;
@@ -422,8 +411,7 @@
         function robustDateParser(d) { if (!d || typeof d !== 'string') return null; let m = d.match(/^(\d{4})-(\d{2})-(\d{2})\s(\d{2}):(\d{2}):(\d{2})/); if (m) return new Date(Date.UTC(m[1], m[2]-1, m[3], m[4], m[5], m[6])); m = d.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s(\d{2}):(\d{2})/); if (m) return new Date(Date.UTC(m[3], m[2]-1, m[1], m[4], m[5])); m = d.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/); if (m) return new Date(Date.UTC(m[3], m[2]-1, m[1])); return null; }
         function getWeekNumber(d) { d = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())); d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7)); const start = new Date(Date.UTC(d.getUTCFullYear(), 0, 1)); return Math.ceil((((d - start) / 86400000) + 1) / 7); }
         function getStartOfWeek(y, w) { const s = new Date(Date.UTC(y, 0, 1 + (w - 1) * 7)); const d = s.getUTCDay(); s.setUTCDate(s.getUTCDate() - d + (d === 0 ? -6 : 1)); return s; }
-        
-        // --- CALCULATIONS (Re-inserted for completeness) ---
+
         function updateDashboard() {
             const pName = document.getElementById('practitioner-select').value, year = parseInt(document.getElementById('year-select').value), week = parseInt(document.getElementById('week-select').value);
             if (!year || !week) return;
@@ -485,34 +473,11 @@
             if (cancellationBarChart) cancellationBarChart.destroy(); cancellationBarChart = new Chart(document.getElementById('cancellationBarChart'), { type: 'bar', data: { labels: lbls, datasets: [{ label: 'Cancellation', data: cD.map(d => d.canc), backgroundColor: '#BE185D' }] }, options: opts });
         }
 
-        // Re-using the same metric calculation functions from the previous step...
-        // (I'm keeping these identical to the previous working version to ensure stability)
-        function calculateQuickMetrics(name, start, end, year) {
-            const startStr = start.toISOString().split('T')[0];
-            const appts = allEvents.filter(e => e.practitionerName === name && e.parsedStartTime >= start && e.parsedStartTime < end && parseInt(e['Maximum Number of Patients']) > 0);
-            const totalBooked = appts.length;
-            if (totalBooked === 0) return { comp:0, util:0, note:0, reb:0, canc:0 };
-            const fixedHrs = getPractitionerHoursForDate(name, startStr);
-            const attended = appts.filter(a => parseInt(a['Number of Patients']) > 0);
-            const attMins = attended.reduce((t, a) => t + (a.parsedEndTime - a.parsedStartTime)/60000, 0);
-            const util = (fixedHrs * 60) > 0 ? (attMins / (fixedHrs * 60)) * 100 : 0;
-            const cancel = appts.filter(a => a['Cancellation Time'] && a['Cancellation Time'].trim() !== '' && a['Cancellation Time'].toLowerCase() !== 'n/a').length;
-            const dna = appts.filter(a => a['Did Not Arrive']?.trim().toLowerCase() === 'true').length;
-            const comp = totalBooked - cancel - dna;
-            const finalNotes = appts.filter(a => a['Treatment Notes Status'] === 'Final').length;
-            const sPats = new Set(), rSPats = new Set();
-            attended.forEach(a => { if (!a.isGroupClass) { const nextDay = new Date(a.parsedStartTime); nextDay.setUTCDate(nextDay.getUTCDate() + 1); a.patientIds.forEach(p => { if(p){ sPats.add(p); if(!rSPats.has(p) && allEvents.some(f => f.patientIds.includes(p) && f.parsedStartTime >= nextDay && f.practitionerName === name)) rSPats.add(p); } }); } });
-            return { comp: comp, util: util, note: comp > 0 ? (finalNotes/comp)*100 : 0, reb: sPats.size > 0 ? (rSPats.size/sPats.size)*100 : 0, canc: totalBooked > 0 ? (cancel/totalBooked)*100 : 0 };
-        }
+        // Re-using logic functions from before
+        function calculateQuickMetrics(name, start, end, year) { const startStr = start.toISOString().split('T')[0]; const appts = allEvents.filter(e => e.practitionerName === name && e.parsedStartTime >= start && e.parsedStartTime < end && parseInt(e['Maximum Number of Patients']) > 0); const totalBooked = appts.length; if (totalBooked === 0) return { comp:0, util:0, note:0, reb:0, canc:0 }; const fixedHrs = getPractitionerHoursForDate(name, startStr); const attended = appts.filter(a => parseInt(a['Number of Patients']) > 0); const attMins = attended.reduce((t, a) => t + (a.parsedEndTime - a.parsedStartTime)/60000, 0); const util = (fixedHrs * 60) > 0 ? (attMins / (fixedHrs * 60)) * 100 : 0; const cancel = appts.filter(a => a['Cancellation Time'] && a['Cancellation Time'].trim() !== '' && a['Cancellation Time'].toLowerCase() !== 'n/a').length; const dna = appts.filter(a => a['Did Not Arrive']?.trim().toLowerCase() === 'true').length; const comp = totalBooked - cancel - dna; const finalNotes = appts.filter(a => a['Treatment Notes Status'] === 'Final').length; const sPats = new Set(), rSPats = new Set(); attended.forEach(a => { if (!a.isGroupClass) { const nextDay = new Date(a.parsedStartTime); nextDay.setUTCDate(nextDay.getUTCDate() + 1); a.patientIds.forEach(p => { if(p){ sPats.add(p); if(!rSPats.has(p) && allEvents.some(f => f.patientIds.includes(p) && f.parsedStartTime >= nextDay && f.practitionerName === name)) rSPats.add(p); } }); } }); return { comp: comp, util: util, note: comp > 0 ? (finalNotes/comp)*100 : 0, reb: sPats.size > 0 ? (rSPats.size/sPats.size)*100 : 0, canc: totalBooked > 0 ? (cancel/totalBooked)*100 : 0 }; }
         
-        function calculatePractitionerMetrics(name, year, week) { return _calculatePractitionerMetricsInternal(name, year, week); }
-        function calculateClinicMetrics(year, week) { return _calculateClinicMetricsInternal(year, week); }
-        function calculatePractitionerYearlyMetrics(name, year) { return _calculatePractitionerYearlyMetricsInternal(name, year); }
-        function calculateClinicYearlyMetrics(year) { return _calculateClinicYearlyMetricsInternal(year); }
-
-        // (Internal functions for brevity - pasting exact logic from previous working file)
-        function _calculatePractitionerMetricsInternal(name, year, week) {
-             if (!name || !year || !week) return {};
+        function calculatePractitionerMetrics(name, year, week) {
+            if (!name || !year || !week) return {};
             const start = getStartOfWeek(year, week), end = new Date(start); end.setUTCDate(end.getUTCDate() + 7);
             const startStr = start.toISOString().split('T')[0];
             const evts = allEvents.filter(e => e.practitionerName === name && e.parsedStartTime >= start && e.parsedStartTime < end);
@@ -543,7 +508,7 @@
             return { totalBookedAppointments: totalBooked, totalCompletedAppointments: comp, practitionerFixedHours: fixedHrs, totalAttendedMinutes: attMins, utilizationRate: util, weeklyBilledRevenue: rev, cancelledAppointments: cancel, didNotAttendCount: dna, cancellationRate: totalBooked>0 ? (cancel/totalBooked)*100 : 0, didNotAttendRate: totalBooked>0 ? (dna/totalBooked)*100 : 0, finalNotesCount: finalNotes, treatmentNoteCompletionRate: comp>0 ? (finalNotes/comp)*100 : 0, rebookingRate: sPats.size>0 ? (rSPats.size/sPats.size)*100 : 0, groupRebookingRate: gPats.size>0 ? (rGPats.size/gPats.size)*100 : 0, uniquePatientsThisWeek: uniqPats, newPatients: newPids.length, newPatientPercent: uniqPats.length>0 ? (newPids.length/uniqPats.length)*100 : 0, iarRate: newPids.length>0 ? (newRebooked/newPids.length)*100 : 0, pvaCliniko: newPids.length>0 ? comp/newPids.length : 0, pvaMatured3Mo: cohort.length>0 ? cohortAppts/cohort.length : 0, avgRevenuePerAppointment: comp>0 ? rev/comp : 0, totalClasses: groups.length, totalGroupAttendance: gAtt, totalGroupCancellations: gCanc, totalPotentialAttendance: gAtt+gCanc, classCancellationRate: (gAtt+gCanc)>0 ? (gCanc/(gAtt+gCanc))*100 : 0, totalGroupRevenue: gRev, groupRevenuePercent: rev>0 ? (gRev/rev)*100 : 0 };
         }
 
-        function _calculateClinicMetricsInternal(year, week) {
+        function calculateClinicMetrics(year, week) {
             if (!year || !week) return {};
             const start = getStartOfWeek(year, week), end = new Date(start); end.setUTCDate(end.getUTCDate() + 7);
             const startStr = start.toISOString().split('T')[0];
@@ -570,8 +535,8 @@
             return { totalBookedAppointments: booked, totalCompletedAppointments: comp, utilizationRate: clinicFixedMins>0 ? (attMins/clinicFixedMins)*100 : 0, cancellationRate: booked>0 ? (cancel/booked)*100 : 0, didNotAttendRate: booked>0 ? (dna/booked)*100 : 0, cancelledAppointments: cancel, didNotAttendCount: dna, newPatients: newPids.length, newPatientPercent: comp>0 ? (newPids.length/comp)*100 : 0, rebookingRate: sPats.size>0 ? (rSPats.size/sPats.size)*100 : 0, groupRebookingRate: gPats.size>0 ? (rGPats.size/gPats.size)*100 : 0, treatmentNoteCompletionRate: comp>0 ? (finalNotes/comp)*100 : 0, finalNotesCount: finalNotes, iarRate: newPids.length>0 ? (iar/newPids.length)*100 : 0, pvaCliniko: newPids.length>0 ? comp/newPids.length : 0, pvaMatured3Mo: cohort.length>0 ? cohortAppts/cohort.length : 0, totalClasses: groups.length, totalGroupAttendance: gAtt, totalGroupCancellations: gCanc, classCancellationRate: (gAtt+gCanc)>0 ? (gCanc/(gAtt+gCanc))*100 : 0, totalPotentialAttendance: gAtt+gCanc };
         }
 
-        function _calculatePractitionerYearlyMetricsInternal(name, year) { const weeksInYear = 53; const metrics = {}; const keys = ['totalBookedAppointments','totalCompletedAppointments','weeklyBilledRevenue','cancellationRate','didNotAttendRate','newPatients','newPatientPercent','rebookingRate','groupRebookingRate','avgRevenuePerAppointment','pvaCliniko','iarRate','pvaMatured3Mo','treatmentNoteCompletionRate','utilizationRate','totalClasses','totalGroupAttendance','totalGroupCancellations','totalGroupRevenue','groupRevenuePercent','classCancellationRate']; keys.forEach(k => metrics[k] = Array(weeksInYear).fill(null)); const now = new Date(); for (let w = 1; w <= weeksInYear; w++) { const start = getStartOfWeek(year, w); if (start > now) continue; const m = calculatePractitionerMetrics(name, year, w); if (m.totalBookedAppointments !== undefined) keys.forEach(k => metrics[k][w-1] = m[k]); } return metrics; }
-        function _calculateClinicYearlyMetricsInternal(year) { const weeksInYear = 53; const metrics = {}; const keys = ['totalBookedAppointments','totalCompletedAppointments','utilizationRate','cancellationRate','didNotAttendRate','newPatients','newPatientPercent','rebookingRate','groupRebookingRate','treatmentNoteCompletionRate','iarRate','pvaCliniko','pvaMatured3Mo','totalClasses','totalGroupAttendance','totalGroupCancellations','classCancellationRate']; keys.forEach(k => metrics[k] = Array(weeksInYear).fill(null)); const now = new Date(); for (let w = 1; w <= weeksInYear; w++) { const start = getStartOfWeek(year, w); if (start > now) continue; const m = calculateClinicMetrics(year, w); if (m.totalBookedAppointments !== undefined) keys.forEach(k => metrics[k][w-1] = m[k]); } return metrics; }
+        function calculatePractitionerYearlyMetrics(name, year) { const weeksInYear = 53; const metrics = {}; const keys = ['totalBookedAppointments','totalCompletedAppointments','weeklyBilledRevenue','cancellationRate','didNotAttendRate','newPatients','newPatientPercent','rebookingRate','groupRebookingRate','avgRevenuePerAppointment','pvaCliniko','iarRate','pvaMatured3Mo','treatmentNoteCompletionRate','utilizationRate','totalClasses','totalGroupAttendance','totalGroupCancellations','totalGroupRevenue','groupRevenuePercent','classCancellationRate']; keys.forEach(k => metrics[k] = Array(weeksInYear).fill(null)); const now = new Date(); for (let w = 1; w <= weeksInYear; w++) { const start = getStartOfWeek(year, w); if (start > now) continue; const m = calculatePractitionerMetrics(name, year, w); if (m.totalBookedAppointments !== undefined) keys.forEach(k => metrics[k][w-1] = m[k]); } return metrics; }
+        function calculateClinicYearlyMetrics(year) { const weeksInYear = 53; const metrics = {}; const keys = ['totalBookedAppointments','totalCompletedAppointments','utilizationRate','cancellationRate','didNotAttendRate','newPatients','newPatientPercent','rebookingRate','groupRebookingRate','treatmentNoteCompletionRate','iarRate','pvaCliniko','pvaMatured3Mo','totalClasses','totalGroupAttendance','totalGroupCancellations','classCancellationRate']; keys.forEach(k => metrics[k] = Array(weeksInYear).fill(null)); const now = new Date(); for (let w = 1; w <= weeksInYear; w++) { const start = getStartOfWeek(year, w); if (start > now) continue; const m = calculateClinicMetrics(year, w); if (m.totalBookedAppointments !== undefined) keys.forEach(k => metrics[k][w-1] = m[k]); } return metrics; }
     </script>
 </body>
 </html>
