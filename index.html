@@ -183,12 +183,13 @@
     </div>
 
     <script>
-        // --- GLOBAL VARIABLES & CONSTANTS ---
+// --- GLOBAL VARIABLES ---
         let allEvents = [], invoicesData = [], modalChart;
         let practitionerLoadChart, utilizationBarChart, notesBarChart, rebookingBarChart, cancellationBarChart;
         let globalPatientFirstAppointment = {}, allPopulatedYears = [], allPopulatedWeeks = {}, practitionersList = [];
         let dataLoadingPromise = null; 
 
+        // --- CONSTANTS ---
         const PRACTITIONER_HOURS_HISTORY = {
             'Isabella Coluccio': [{ startDate: '2000-01-01', endDate: '9999-12-31', hours: 33 }],
             'Kate Deaves': [{ startDate: '2000-01-01', endDate: '9999-12-31', hours: 27 }],
@@ -196,61 +197,71 @@
             'Caitlin Wright': [{ startDate: '2000-01-01', endDate: '9999-12-31', hours: 32 }],
             'Arron Huynh': [{ startDate: '2000-01-01', endDate: '9999-12-31', hours: 14 }]
         };
-
+        
         const METRIC_BENCHMARKS = { totalBookedAppointments: 120, totalCompletedAppointments: 120, utilizationRate: 80, cancellationRate: 15, didNotAttendRate: 5, rebookingRate: 80, treatmentNoteCompletionRate: 90, iarRate: 95, pvaCliniko: 8, pvaMatured3Mo: 8, totalClasses: 5, totalGroupAttendance: 30, classCancellationRate: 15, groupRebookingRate: 60 };
         const METRIC_GOOD_DIRECTION = { totalBookedAppointments: 'up', totalCompletedAppointments: 'up', utilizationRate: 'up', weeklyBilledRevenue: 'up', cancellationRate: 'down', didNotAttendRate: 'down', newPatientPercent: 'up', rebookingRate: 'up', avgRevenuePerAppointment: 'up', treatmentNoteCompletionRate: 'up', newPatients: 'up', iarRate: 'up', pvaCliniko: 'up', pvaMatured3Mo: 'up', totalClasses: 'up', totalGroupAttendance: 'up', groupRebookingRate: 'up', totalGroupCancellations: 'down', classCancellationRate: 'down', totalGroupRevenue: 'up', groupRevenuePercent: 'up' };
 
-        // --- NETLIFY IDENTITY CONFIG (SIMPLIFIED) ---
+        // --- APP CONTROLLER (The Fix) ---
         const loginView = document.getElementById('login-view');
         const dashboardView = document.getElementById('dashboard-view');
+        const tokenLoadingView = document.getElementById('token-loading-view');
+        const initialLoading = document.getElementById('initial-loading');
 
-        // 1. Initialize FIRST
-        netlifyIdentity.init();
+        // 1. Define Event Listeners
+        netlifyIdentity.on('init', user => {
+            console.log('Netlify Identity Initialized', user);
+            // This runs ONLY after the widget has checked the URL for tokens.
+            // If a token was found, the widget is ALREADY handling it (opening popup).
+            // We just need to decide what to show in the background.
+            
+            if (!user) {
+                // No user logged in. 
+                // Are we in a recovery flow? (Widget handles popup, we handle background)
+                // We check if the widget is open. If yes, keep background neutral.
+                // Note: We can't easily check if widget is open via API, so we assume:
+                // If no user, show Login.
+                console.log('No user found. Showing Login.');
+                showLogin();
+            } else {
+                // User found! Go to Dashboard.
+                console.log('User found. Going to Dashboard.');
+                showDashboard(user);
+            }
+        });
 
-        // 2. Event Listeners
         netlifyIdentity.on('login', user => {
+            console.log('User Logged In');
             netlifyIdentity.close();
             showDashboard(user);
         });
 
         netlifyIdentity.on('logout', () => {
-            showLogin();
+            console.log('User Logged Out');
             window.location.reload();
         });
 
-        // 3. State Logic (Traffic Cop)
-        // We explicitly capture the hash here to check for tokens
-        const hash = window.location.hash;
-        const isTokenPresent = hash.includes("_token=");
+        // 2. Initialize (Triggers the logic above)
+        // We rely on the 'init' event to drive the UI. 
+        // We do NOT run any UI logic outside of that event.
+        netlifyIdentity.init();
 
-        const user = netlifyIdentity.currentUser();
-
-        if (user) {
-            // If user is already valid logged in, just go.
-            showDashboard(user);
-        } else {
-            // If no user, ALWAYS show the login screen so they aren't stuck.
-            showLogin();
-            
-            // BUT, if we detect a token, attempt to open the modal automatically on top.
-            if (isTokenPresent) {
-                // Small delay to ensure widget is ready to catch the event
-                setTimeout(() => {
-                    netlifyIdentity.open();
-                }, 500);
-            }
-        }
-
-        // --- VIEW CONTROLLER ---
+        // --- VIEW FUNCTIONS ---
         function showLogin() {
-            loginView.classList.remove('view-hidden');
+            // Hide everything, show Login
+            tokenLoadingView.classList.add('view-hidden');
             dashboardView.classList.add('view-hidden');
+            loginView.classList.remove('view-hidden');
         }
 
         function showDashboard(user) {
+            // Hide everything, show Dashboard
+            tokenLoadingView.classList.add('view-hidden');
             loginView.classList.add('view-hidden');
             dashboardView.classList.remove('view-hidden');
+            
             document.getElementById('user-display-name').textContent = user.user_metadata.full_name || user.email;
+            
+            // Trigger Data Load
             initDashboardLogic(user);
         }
 
@@ -263,6 +274,8 @@
             if (dataLoadingPromise) return dataLoadingPromise;
 
             const token = user.token.access_token;
+            
+            // Helper to fetch with Auth header
             const fetchWithAuth = (type) => {
                 return fetch(`/.netlify/functions/get_clinic_data?type=${type}`, {
                     headers: { 'Authorization': `Bearer ${token}` }
@@ -280,7 +293,7 @@
                 return true;
             }).catch(e => {
                 console.error("Data load error:", e);
-                document.getElementById('initial-loading').innerHTML = `<p class="text-red-500">Error loading secure data: ${e.message}</p>`;
+                initialLoading.innerHTML = `<p class="text-red-500">Error loading secure data: ${e.message}</p>`;
                 return false;
             });
             return dataLoadingPromise;
@@ -293,12 +306,17 @@
                 if(success) {
                     applyUserPermissions(user); 
                     populateYears();
-                    document.getElementById('initial-loading').style.display = 'none';
+                    initialLoading.style.display = 'none';
                     document.getElementById('main-dashboard-content').classList.remove('hidden');
                 }
             });
         }
 
+        // ... [PASTE ALL THE UTILITY, SETUP, AND CALCULATION FUNCTIONS FROM THE PREVIOUS FILE HERE] ...
+        // (setupDashboardUI, processData, applyUserPermissions, populateYears, populateWeeks, navigateWeek, handleCardClick, getPractitionerHoursForDate, getTrendIndicator, formatCurrency, formatPatientId, robustDateParser, getWeekNumber, getStartOfWeek, updateDashboard, calculateQuickMetrics, calculatePractitionerMetrics, calculateClinicMetrics, showPractitionerYearlyTrendChart, showClinicYearlyTrendChart, calculatePractitionerYearlyMetrics, calculateClinicYearlyMetrics, renderChartInModal, _calculatePractitionerMetricsInternal, _calculateClinicMetricsInternal, _calculatePractitionerYearlyMetricsInternal, _calculateClinicYearlyMetricsInternal)
+        
+        // IMPORTANT: I am including the full set of functions below to ensure copy-paste works.
+        
         function setupDashboardUI() {
             const pt = document.getElementById('practitioner-tab'), ct = document.getElementById('clinic-tab'), pc = document.getElementById('practitioner-dashboard-content'), cc = document.getElementById('clinic-dashboard-content'), pf = document.getElementById('practitioner-filter-container');
             pt.addEventListener('click', () => { pt.classList.add('active-tab'); ct.classList.remove('active-tab'); pc.classList.remove('hidden'); cc.classList.add('hidden'); pf.classList.remove('hidden'); });
