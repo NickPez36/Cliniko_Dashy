@@ -46,7 +46,7 @@
 <body class="bg-brand-gray h-screen flex flex-col overflow-hidden">
 
     <!-- ================= LOGIN VIEW ================= -->
-    <div id="login-view" class="flex-grow flex items-center justify-center">
+    <div id="login-view" class="flex-grow flex items-center justify-center view-hidden">
         <div class="w-full max-w-md p-8 space-y-8 bg-brand-white rounded-2xl shadow-lg text-center m-4">
             <div>
                 <img src="https://raw.githubusercontent.com/NickPez36/Cliniko_Dashy/main/assets/logo.webp" alt="Clinic Logo" class="h-48 w-48 mx-auto mb-6" onerror="this.onerror=null; this.src='https://placehold.co/192x192/0F766E/FFFFFF?text=Logo';">
@@ -218,21 +218,34 @@
         // 2. Initialize Identity AFTER listeners are set
         netlifyIdentity.init();
 
-        // 3. Check if user is already logged in
-        // NOTE: We removed the manual open() check to let the widget handle tokens automatically
-        const currentUser = netlifyIdentity.currentUser();
-        if (currentUser) {
-            loadData(currentUser).then(success => {
-                if (success) showDashboard(currentUser);
-            });
+        // 3. THE TRAFFIC COP LOGIC
+        // Check if we are in a "Recovery" or "Invite" flow (Token present in URL)
+        const isRecoveryFlow = window.location.hash.includes("invite_token=") || window.location.hash.includes("recovery_token=");
+
+        if (isRecoveryFlow) {
+            // STOP EVERYTHING. Do NOT show login. Do NOT show dashboard.
+            // Just open the modal and let the user set their password.
+            // The widget will automatically detect the token and show the right screen.
+            netlifyIdentity.open();
         } else {
-            showLogin();
+            // Normal Flow: Check if user is already logged in
+            const currentUser = netlifyIdentity.currentUser();
+            if (currentUser) {
+                loadData(currentUser).then(success => {
+                    if (success) showDashboard(currentUser);
+                });
+            } else {
+                showLogin();
+            }
         }
 
         // --- VIEW CONTROLLER ---
         function showLogin() {
-            loginView.classList.remove('view-hidden');
-            dashboardView.classList.add('view-hidden');
+            // Only show if we are NOT in recovery flow (handled above)
+            if (!isRecoveryFlow) {
+                loginView.classList.remove('view-hidden');
+                dashboardView.classList.add('view-hidden');
+            }
         }
 
         function showDashboard(user) {
