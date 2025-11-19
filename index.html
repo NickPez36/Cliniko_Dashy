@@ -4,9 +4,19 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Spectrum Health Co - Clinic Dashboard</title>
+    
+    <!-- === CRITICAL REDIRECT LOGIC === -->
+    <script>
+        // If we see a Netlify Identity Token (Invite or Recovery), 
+        // IMMEDIATELY redirect to the safe auth.html page.
+        if (window.location.hash.includes("_token=")) {
+            window.location.href = "/auth.html" + window.location.hash;
+        }
+    </script>
+    <!-- =============================== -->
+
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <!-- Netlify Identity Widget -->
     <script type="text/javascript" src="https://identity.netlify.com/v1/netlify-identity-widget.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script>
@@ -40,15 +50,12 @@
         .week-nav-button { background-color: #E5E7EB; color: #1F2937; border: none; border-radius: 0.375rem; padding: 0.5rem 0.75rem; font-weight: 600; cursor: pointer; transition: background-color 0.2s ease; }
         .week-nav-button:hover { background-color: #D1D5DB; }
         #filter-bar { position: sticky; top: 0; z-index: 10; background-color: #F3F4F6; }
-        
-        /* Utility to hide views - used by JS */
         .view-hidden { display: none !important; }
     </style>
 </head>
 <body class="bg-brand-gray h-screen flex flex-col overflow-hidden">
 
     <!-- ================= LOGIN VIEW ================= -->
-    <!-- NOTE: Removed 'view-hidden' from here. It is visible by default. -->
     <div id="login-view" class="flex-grow flex items-center justify-center">
         <div class="w-full max-w-md p-8 space-y-8 bg-brand-white rounded-2xl shadow-lg text-center m-4">
             <div>
@@ -59,7 +66,6 @@
             
             <div class="mt-8 space-y-6">
                 <p class="text-sm text-gray-600">Please log in securely to access metrics.</p>
-                <!-- Clicking this opens the widget manually if it doesn't auto-open -->
                 <button onclick="netlifyIdentity.open()" class="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-brand-dark-teal hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-dark-teal transition-colors">
                     Log In / Sign Up
                 </button>
@@ -187,61 +193,39 @@
     </div>
 
     <script>
-    // =========================================================================
-    // SAFETY WRAPPER: Wait for the page to be ready before running ANY script
-    // =========================================================================
-    document.addEventListener('DOMContentLoaded', function() {
-        
-        // --- APP ELEMENTS ---
+        // --- NETLIFY IDENTITY CONFIG (CLEAN) ---
         const loginView = document.getElementById('login-view');
         const dashboardView = document.getElementById('dashboard-view');
-        const initialLoading = document.getElementById('initial-loading');
-        const mainDashboardContent = document.getElementById('main-dashboard-content');
 
-        // --- GLOBAL VARIABLES ---
-        let allEvents = [], invoicesData = [], modalChart;
-        let practitionerLoadChart, utilizationBarChart, notesBarChart, rebookingBarChart, cancellationBarChart;
-        let globalPatientFirstAppointment = {}, allPopulatedYears = [], allPopulatedWeeks = {}, practitionersList = [];
-        let dataLoadingPromise = null;
-
-        const PRACTITIONER_HOURS_HISTORY = {
-            'Isabella Coluccio': [{ startDate: '2000-01-01', endDate: '9999-12-31', hours: 33 }],
-            'Kate Deaves': [{ startDate: '2000-01-01', endDate: '9999-12-31', hours: 27 }],
-            'Andrew Lovell': [{ startDate: '2000-01-01', endDate: '9999-12-31', hours: 32 }],
-            'Caitlin Wright': [{ startDate: '2000-01-01', endDate: '9999-12-31', hours: 32 }],
-            'Arron Huynh': [{ startDate: '2000-01-01', endDate: '9999-12-31', hours: 14 }]
-        };
-
-        const METRIC_BENCHMARKS = { totalBookedAppointments: 120, totalCompletedAppointments: 120, utilizationRate: 80, cancellationRate: 15, didNotAttendRate: 5, rebookingRate: 80, treatmentNoteCompletionRate: 90, iarRate: 95, pvaCliniko: 8, pvaMatured3Mo: 8, totalClasses: 5, totalGroupAttendance: 30, classCancellationRate: 15, groupRebookingRate: 60 };
-        const METRIC_GOOD_DIRECTION = { totalBookedAppointments: 'up', totalCompletedAppointments: 'up', utilizationRate: 'up', weeklyBilledRevenue: 'up', cancellationRate: 'down', didNotAttendRate: 'down', newPatientPercent: 'up', rebookingRate: 'up', avgRevenuePerAppointment: 'up', treatmentNoteCompletionRate: 'up', newPatients: 'up', iarRate: 'up', pvaCliniko: 'up', pvaMatured3Mo: 'up', totalClasses: 'up', totalGroupAttendance: 'up', groupRebookingRate: 'up', totalGroupCancellations: 'down', classCancellationRate: 'down', totalGroupRevenue: 'up', groupRevenuePercent: 'up' };
-
-        // --- NETLIFY IDENTITY INITIALIZATION ---
-        // 1. Initialize the widget (this detects tokens automatically)
+        // 1. Initialize
         netlifyIdentity.init();
 
-        // 2. Check if user is already logged in
-        const user = netlifyIdentity.currentUser();
+        // 2. Check Logged In User
+        const currentUser = netlifyIdentity.currentUser();
 
-        if (user) {
-            // If user exists, hide login and show dashboard
-            showDashboard(user);
+        if (currentUser) {
+            showDashboard(currentUser);
         } else {
-            // If no user, Login View is ALREADY VISIBLE by default (CSS).
-            // We don't need to do anything.
+            // Ensure login view is shown (it should be default, but good to be safe)
+            showLogin();
         }
 
-        // 3. Event Listeners
+        // 3. Listeners
         netlifyIdentity.on('login', user => {
             netlifyIdentity.close();
             showDashboard(user);
         });
 
         netlifyIdentity.on('logout', () => {
-            // Simple reload clears state
+            showLogin();
             window.location.reload();
         });
 
-        // --- VIEW FUNCTIONS ---
+        function showLogin() {
+            loginView.classList.remove('view-hidden');
+            dashboardView.classList.add('view-hidden');
+        }
+
         function showDashboard(user) {
             loginView.classList.add('view-hidden');
             dashboardView.classList.remove('view-hidden');
@@ -249,11 +233,30 @@
             initDashboardLogic(user);
         }
 
-        window.handleLogout = function() {
+        function handleLogout() {
             netlifyIdentity.logout();
         }
 
-        // --- DATA LOADING ---
+
+        // --- DASHBOARD LOGIC (STANDARD) ---
+        // ... [Everything below remains exactly the same as the previous working version] ...
+        // ... [Including loadData, initDashboardLogic, processData, calculations, etc.] ...
+        
+        // [Copied from previous context for completeness]
+        let allEvents = [], invoicesData = [], modalChart;
+        let practitionerLoadChart, utilizationBarChart, notesBarChart, rebookingBarChart, cancellationBarChart;
+        let globalPatientFirstAppointment = {}, allPopulatedYears = [], allPopulatedWeeks = {}, practitionersList = [];
+        let dataLoadingPromise = null; 
+        const PRACTITIONER_HOURS_HISTORY = {
+            'Isabella Coluccio': [{ startDate: '2000-01-01', endDate: '9999-12-31', hours: 33 }],
+            'Kate Deaves': [{ startDate: '2000-01-01', endDate: '9999-12-31', hours: 27 }],
+            'Andrew Lovell': [{ startDate: '2000-01-01', endDate: '9999-12-31', hours: 32 }],
+            'Caitlin Wright': [{ startDate: '2000-01-01', endDate: '9999-12-31', hours: 32 }],
+            'Arron Huynh': [{ startDate: '2000-01-01', endDate: '9999-12-31', hours: 14 }]
+        };
+        const METRIC_BENCHMARKS = { totalBookedAppointments: 120, totalCompletedAppointments: 120, utilizationRate: 80, cancellationRate: 15, didNotAttendRate: 5, rebookingRate: 80, treatmentNoteCompletionRate: 90, iarRate: 95, pvaCliniko: 8, pvaMatured3Mo: 8, totalClasses: 5, totalGroupAttendance: 30, classCancellationRate: 15, groupRebookingRate: 60 };
+        const METRIC_GOOD_DIRECTION = { totalBookedAppointments: 'up', totalCompletedAppointments: 'up', utilizationRate: 'up', weeklyBilledRevenue: 'up', cancellationRate: 'down', didNotAttendRate: 'down', newPatientPercent: 'up', rebookingRate: 'up', avgRevenuePerAppointment: 'up', treatmentNoteCompletionRate: 'up', newPatients: 'up', iarRate: 'up', pvaCliniko: 'up', pvaMatured3Mo: 'up', totalClasses: 'up', totalGroupAttendance: 'up', groupRebookingRate: 'up', totalGroupCancellations: 'down', classCancellationRate: 'down', totalGroupRevenue: 'up', groupRevenuePercent: 'up' };
+
         function loadData(user) {
             if (dataLoadingPromise) return dataLoadingPromise;
             const token = user.token.access_token;
@@ -269,21 +272,20 @@
                 processData(aJ, iJ); return true;
             }).catch(e => {
                 console.error("Data load error:", e);
-                initialLoading.innerHTML = `<p class="text-red-500">Error loading secure data: ${e.message}</p>`;
+                document.getElementById('initial-loading').innerHTML = `<p class="text-red-500">Error loading secure data: ${e.message}</p>`;
                 return false;
             });
             return dataLoadingPromise;
         }
 
-        // --- DASHBOARD LOGIC ---
         function initDashboardLogic(user) {
             setupDashboardUI();
             loadData(user).then(success => {
                 if(success) {
                     applyUserPermissions(user); 
                     populateYears();
-                    initialLoading.style.display = 'none';
-                    mainDashboardContent.classList.remove('hidden');
+                    document.getElementById('initial-loading').style.display = 'none';
+                    document.getElementById('main-dashboard-content').classList.remove('hidden');
                 }
             });
         }
@@ -411,7 +413,6 @@
             const pName = document.getElementById('practitioner-select').value, year = parseInt(document.getElementById('year-select').value), week = parseInt(document.getElementById('week-select').value);
             if (!year || !week) return;
             let py = year, pw = week - 1; if (pw < 1) { py = year - 1; const w = allPopulatedWeeks[py]; pw = w ? w[w.length - 1] : 52; }
-            
             const renderCard = (m, type, trend) => {
                 let bg, tc, vc, sc, svg='', tHTML='';
                 if (type === 'summary') { bg='bg-brand-light-green'; tc='text-brand-dark-pink'; vc='text-brand-dark-pink'; sc='text-pink-900 opacity-70'; }
@@ -469,6 +470,7 @@
             if (cancellationBarChart) cancellationBarChart.destroy(); cancellationBarChart = new Chart(document.getElementById('cancellationBarChart'), { type: 'bar', data: { labels: lbls, datasets: [{ label: 'Cancellation', data: cD.map(d => d.canc), backgroundColor: '#BE185D' }] }, options: opts });
         }
 
+        // Re-using logic functions from before
         function calculateQuickMetrics(name, start, end, year) { const startStr = start.toISOString().split('T')[0]; const appts = allEvents.filter(e => e.practitionerName === name && e.parsedStartTime >= start && e.parsedStartTime < end && parseInt(e['Maximum Number of Patients']) > 0); const totalBooked = appts.length; if (totalBooked === 0) return { comp:0, util:0, note:0, reb:0, canc:0 }; const fixedHrs = getPractitionerHoursForDate(name, startStr); const attended = appts.filter(a => parseInt(a['Number of Patients']) > 0); const attMins = attended.reduce((t, a) => t + (a.parsedEndTime - a.parsedStartTime)/60000, 0); const util = (fixedHrs * 60) > 0 ? (attMins / (fixedHrs * 60)) * 100 : 0; const cancel = appts.filter(a => a['Cancellation Time'] && a['Cancellation Time'].trim() !== '' && a['Cancellation Time'].toLowerCase() !== 'n/a').length; const dna = appts.filter(a => a['Did Not Arrive']?.trim().toLowerCase() === 'true').length; const comp = totalBooked - cancel - dna; const finalNotes = appts.filter(a => a['Treatment Notes Status'] === 'Final').length; const sPats = new Set(), rSPats = new Set(); attended.forEach(a => { if (!a.isGroupClass) { const nextDay = new Date(a.parsedStartTime); nextDay.setUTCDate(nextDay.getUTCDate() + 1); a.patientIds.forEach(p => { if(p){ sPats.add(p); if(!rSPats.has(p) && allEvents.some(f => f.patientIds.includes(p) && f.parsedStartTime >= nextDay && f.practitionerName === name)) rSPats.add(p); } }); } }); return { comp: comp, util: util, note: comp > 0 ? (finalNotes/comp)*100 : 0, reb: sPats.size > 0 ? (rSPats.size/sPats.size)*100 : 0, canc: totalBooked > 0 ? (cancel/totalBooked)*100 : 0 }; }
         
         function calculatePractitionerMetrics(name, year, week) {
@@ -532,7 +534,6 @@
 
         function _calculatePractitionerYearlyMetricsInternal(name, year) { const weeksInYear = 53; const metrics = {}; const keys = ['totalBookedAppointments','totalCompletedAppointments','weeklyBilledRevenue','cancellationRate','didNotAttendRate','newPatients','newPatientPercent','rebookingRate','groupRebookingRate','avgRevenuePerAppointment','pvaCliniko','iarRate','pvaMatured3Mo','treatmentNoteCompletionRate','utilizationRate','totalClasses','totalGroupAttendance','totalGroupCancellations','totalGroupRevenue','groupRevenuePercent','classCancellationRate']; keys.forEach(k => metrics[k] = Array(weeksInYear).fill(null)); const now = new Date(); for (let w = 1; w <= weeksInYear; w++) { const start = getStartOfWeek(year, w); if (start > now) continue; const m = calculatePractitionerMetrics(name, year, w); if (m.totalBookedAppointments !== undefined) keys.forEach(k => metrics[k][w-1] = m[k]); } return metrics; }
         function _calculateClinicYearlyMetricsInternal(year) { const weeksInYear = 53; const metrics = {}; const keys = ['totalBookedAppointments','totalCompletedAppointments','utilizationRate','cancellationRate','didNotAttendRate','newPatients','newPatientPercent','rebookingRate','groupRebookingRate','treatmentNoteCompletionRate','iarRate','pvaCliniko','pvaMatured3Mo','totalClasses','totalGroupAttendance','totalGroupCancellations','classCancellationRate']; keys.forEach(k => metrics[k] = Array(weeksInYear).fill(null)); const now = new Date(); for (let w = 1; w <= weeksInYear; w++) { const start = getStartOfWeek(year, w); if (start > now) continue; const m = calculateClinicMetrics(year, w); if (m.totalBookedAppointments !== undefined) keys.forEach(k => metrics[k][w-1] = m[k]); } return metrics; }
-    });
     </script>
 </body>
 </html>
