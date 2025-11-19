@@ -219,6 +219,7 @@
         netlifyIdentity.init();
 
         // 3. Check if user is already logged in
+        // NOTE: We removed the manual open() check to let the widget handle tokens automatically
         const currentUser = netlifyIdentity.currentUser();
         if (currentUser) {
             loadData(currentUser).then(success => {
@@ -407,7 +408,8 @@
         function robustDateParser(d) { if (!d || typeof d !== 'string') return null; let m = d.match(/^(\d{4})-(\d{2})-(\d{2})\s(\d{2}):(\d{2}):(\d{2})/); if (m) return new Date(Date.UTC(m[1], m[2]-1, m[3], m[4], m[5], m[6])); m = d.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s(\d{2}):(\d{2})/); if (m) return new Date(Date.UTC(m[3], m[2]-1, m[1], m[4], m[5])); m = d.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/); if (m) return new Date(Date.UTC(m[3], m[2]-1, m[1])); return null; }
         function getWeekNumber(d) { d = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())); d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7)); const start = new Date(Date.UTC(d.getUTCFullYear(), 0, 1)); return Math.ceil((((d - start) / 86400000) + 1) / 7); }
         function getStartOfWeek(y, w) { const s = new Date(Date.UTC(y, 0, 1 + (w - 1) * 7)); const d = s.getUTCDay(); s.setUTCDate(s.getUTCDate() - d + (d === 0 ? -6 : 1)); return s; }
-
+        
+        // --- CALCULATIONS (Re-inserted for completeness) ---
         function updateDashboard() {
             const pName = document.getElementById('practitioner-select').value, year = parseInt(document.getElementById('year-select').value), week = parseInt(document.getElementById('week-select').value);
             if (!year || !week) return;
