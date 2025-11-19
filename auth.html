@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Authentication - Spectrum Health Co</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script type="text/javascript" src="https://identity.netlify.com/v1/netlify-identity-widget.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>body { font-family: 'Inter', sans-serif; }</style>
+</head>
+<body class="bg-gray-100 h-screen flex flex-col items-center justify-center">
+
+    <div class="text-center p-8 bg-white rounded-xl shadow-lg max-w-md mx-4">
+        <div class="mb-6">
+            <!-- Optional: Add your logo here if you want -->
+            <h1 class="text-2xl font-bold text-gray-900">Account Setup</h1>
+            <p class="text-gray-600 mt-2">Please complete the form in the popup window.</p>
+        </div>
+
+        <div id="status-message" class="text-sm text-teal-600 font-medium mb-4">
+            Initializing secure connection...
+        </div>
+
+        <!-- Fallback button if popup gets blocked -->
+        <button onclick="netlifyIdentity.open()" class="hidden id='manual-btn' text-teal-600 hover:underline text-sm">
+            Don't see the popup? Click here.
+        </button>
+    </div>
+
+    <script>
+        const statusMsg = document.getElementById('status-message');
+        
+        // 1. Initialize the Widget
+        // It will automatically detect the #invite_token or #recovery_token in the URL
+        // and open the correct modal (Set Password, etc.)
+        netlifyIdentity.init();
+
+        // 2. Handle Successful Login/Signup
+        // Once the user sets their password, they are technically "logged in".
+        // We simply redirect them back to the main dashboard.
+        netlifyIdentity.on('login', user => {
+            statusMsg.textContent = "Success! Redirecting to dashboard...";
+            setTimeout(() => {
+                window.location.href = "/"; // Go back to index.html
+            }, 1000);
+        });
+
+        // 3. Handle Errors
+        netlifyIdentity.on('error', err => {
+            console.error('Auth Error', err);
+            statusMsg.textContent = "An error occurred. Please try again.";
+            statusMsg.className = "text-sm text-red-600 font-medium mb-4";
+        });
+
+        // 4. Manual open fallback
+        // If the widget doesn't auto-open for some reason, show the button
+        setTimeout(() => {
+            document.querySelector('button').classList.remove('hidden');
+        }, 2000);
+    </script>
+</body>
+</html>
