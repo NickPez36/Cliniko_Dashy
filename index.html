@@ -45,6 +45,15 @@
 </head>
 <body class="bg-brand-gray h-screen flex flex-col overflow-hidden">
 
+    <!-- ================= LOADING OVERLAY (For Token Verification) ================= -->
+    <div id="token-loading-view" class="flex-grow flex items-center justify-center view-hidden absolute inset-0 z-50 bg-brand-gray">
+        <div class="text-center">
+            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-dark-teal mx-auto mb-4"></div>
+            <p class="text-xl font-semibold text-brand-text-dark">Verifying secure link...</p>
+            <p class="text-sm text-gray-500 mt-2">Please wait while we set up your account.</p>
+        </div>
+    </div>
+
     <!-- ================= LOGIN VIEW ================= -->
     <div id="login-view" class="flex-grow flex items-center justify-center view-hidden">
         <div class="w-full max-w-md p-8 space-y-8 bg-brand-white rounded-2xl shadow-lg text-center m-4">
@@ -183,7 +192,7 @@
     </div>
 
     <script>
-        // --- GLOBAL VARIABLES & CONSTANTS ---
+        // --- GLOBAL VARIABLES ---
         let allEvents = [], invoicesData = [], modalChart;
         let practitionerLoadChart, utilizationBarChart, notesBarChart, rebookingBarChart, cancellationBarChart;
         let globalPatientFirstAppointment = {}, allPopulatedYears = [], allPopulatedWeeks = {}, practitionersList = [];
@@ -200,11 +209,16 @@
         const METRIC_BENCHMARKS = { totalBookedAppointments: 120, totalCompletedAppointments: 120, utilizationRate: 80, cancellationRate: 15, didNotAttendRate: 5, rebookingRate: 80, treatmentNoteCompletionRate: 90, iarRate: 95, pvaCliniko: 8, pvaMatured3Mo: 8, totalClasses: 5, totalGroupAttendance: 30, classCancellationRate: 15, groupRebookingRate: 60 };
         const METRIC_GOOD_DIRECTION = { totalBookedAppointments: 'up', totalCompletedAppointments: 'up', utilizationRate: 'up', weeklyBilledRevenue: 'up', cancellationRate: 'down', didNotAttendRate: 'down', newPatientPercent: 'up', rebookingRate: 'up', avgRevenuePerAppointment: 'up', treatmentNoteCompletionRate: 'up', newPatients: 'up', iarRate: 'up', pvaCliniko: 'up', pvaMatured3Mo: 'up', totalClasses: 'up', totalGroupAttendance: 'up', groupRebookingRate: 'up', totalGroupCancellations: 'down', classCancellationRate: 'down', totalGroupRevenue: 'up', groupRevenuePercent: 'up' };
 
-        // --- NETLIFY IDENTITY CONFIG ---
+        // --- NETLIFY IDENTITY LOGIC (Reordered for Fix) ---
         const loginView = document.getElementById('login-view');
         const dashboardView = document.getElementById('dashboard-view');
+        const tokenLoadingView = document.getElementById('token-loading-view');
 
-        // 1. Define Listeners FIRST
+        // 1. CRITICAL: Check for Token *Before* anything else
+        const hash = window.location.hash;
+        const isRecoveryFlow = hash.includes("invite_token=") || hash.includes("recovery_token=");
+
+        // 2. Define Listeners
         netlifyIdentity.on('login', user => {
             netlifyIdentity.close();
             showDashboard(user);
@@ -215,20 +229,24 @@
             window.location.reload();
         });
         
-        // 2. Initialize Identity AFTER listeners are set
+        // 3. Initialize Widget
+        // This call will strip the hash if it finds a token!
         netlifyIdentity.init();
 
-        // 3. THE TRAFFIC COP LOGIC
-        // Check if we are in a "Recovery" or "Invite" flow (Token present in URL)
-        const isRecoveryFlow = window.location.hash.includes("invite_token=") || window.location.hash.includes("recovery_token=");
-
+        // 4. Decide what to show based on the *original* hash state
         if (isRecoveryFlow) {
-            // STOP EVERYTHING. Do NOT show login. Do NOT show dashboard.
-            // Just open the modal and let the user set their password.
-            // The widget will automatically detect the token and show the right screen.
-            netlifyIdentity.open();
+            // STATE: RECOVERY / INVITE
+            // Do NOT show login. Do NOT show dashboard.
+            // Show a neutral loading screen.
+            tokenLoadingView.classList.remove('view-hidden');
+            loginView.classList.add('view-hidden');
+            
+            // Give the widget 1 second to auto-open, otherwise force it.
+            setTimeout(() => {
+                 netlifyIdentity.open(); 
+            }, 1000);
         } else {
-            // Normal Flow: Check if user is already logged in
+            // STATE: NORMAL VISIT
             const currentUser = netlifyIdentity.currentUser();
             if (currentUser) {
                 loadData(currentUser).then(success => {
@@ -241,15 +259,16 @@
 
         // --- VIEW CONTROLLER ---
         function showLogin() {
-            // Only show if we are NOT in recovery flow (handled above)
-            if (!isRecoveryFlow) {
+            if (!isRecoveryFlow) { // Extra guard
                 loginView.classList.remove('view-hidden');
                 dashboardView.classList.add('view-hidden');
+                tokenLoadingView.classList.add('view-hidden');
             }
         }
 
         function showDashboard(user) {
             loginView.classList.add('view-hidden');
+            tokenLoadingView.classList.add('view-hidden');
             dashboardView.classList.remove('view-hidden');
             document.getElementById('user-display-name').textContent = user.user_metadata.full_name || user.email;
             initDashboardLogic(user);
@@ -299,7 +318,7 @@
                 }
             });
         }
-
+        // ... (Rest of dashboard logic matches previous version) ...
         function setupDashboardUI() {
             const pt = document.getElementById('practitioner-tab'), ct = document.getElementById('clinic-tab'), pc = document.getElementById('practitioner-dashboard-content'), cc = document.getElementById('clinic-dashboard-content'), pf = document.getElementById('practitioner-filter-container');
             pt.addEventListener('click', () => { pt.classList.add('active-tab'); ct.classList.remove('active-tab'); pc.classList.remove('hidden'); cc.classList.add('hidden'); pf.classList.remove('hidden'); });
@@ -334,16 +353,13 @@
             practitionersList.forEach(n => ps.add(new Option(n, n)));
             const roles = user.app_metadata.roles || [];
             const isAdmin = roles.includes('admin');
-
             if (!isAdmin) {
                 const userName = user.user_metadata.full_name;
                 const match = practitionersList.find(p => p.toLowerCase() === userName.toLowerCase());
                 if (match) ps.value = match; 
                 else { ps.add(new Option(userName, userName)); ps.value = userName; }
                 ps.disabled = true;
-            } else {
-                ps.disabled = false;
-            }
+            } else { ps.disabled = false; }
         }
 
         function populateYears() {
@@ -421,8 +437,7 @@
         function robustDateParser(d) { if (!d || typeof d !== 'string') return null; let m = d.match(/^(\d{4})-(\d{2})-(\d{2})\s(\d{2}):(\d{2}):(\d{2})/); if (m) return new Date(Date.UTC(m[1], m[2]-1, m[3], m[4], m[5], m[6])); m = d.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s(\d{2}):(\d{2})/); if (m) return new Date(Date.UTC(m[3], m[2]-1, m[1], m[4], m[5])); m = d.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/); if (m) return new Date(Date.UTC(m[3], m[2]-1, m[1])); return null; }
         function getWeekNumber(d) { d = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())); d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7)); const start = new Date(Date.UTC(d.getUTCFullYear(), 0, 1)); return Math.ceil((((d - start) / 86400000) + 1) / 7); }
         function getStartOfWeek(y, w) { const s = new Date(Date.UTC(y, 0, 1 + (w - 1) * 7)); const d = s.getUTCDay(); s.setUTCDate(s.getUTCDate() - d + (d === 0 ? -6 : 1)); return s; }
-        
-        // --- CALCULATIONS (Re-inserted for completeness) ---
+
         function updateDashboard() {
             const pName = document.getElementById('practitioner-select').value, year = parseInt(document.getElementById('year-select').value), week = parseInt(document.getElementById('week-select').value);
             if (!year || !week) return;
